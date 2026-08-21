@@ -1,0 +1,139 @@
+"""FastAPI 应用：API 路由与前端静态资源托管。"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from .auth import require_token
+from .compose_service import ComposeService
+from .config import Settings
+from .errors import DeckError
+from .instance_service import (
+    _recognize_instance,
+    create_instance,
+    list_instances,
+    read_instance_config,
+    save_instance_config,
+)
+from .schemas import (
+    AuthCheckOut,
+    ComposeResultOut,
+    CreateInstanceIn,
+    InstanceConfigOut,
+    InstanceListOut,
+    InstanceOut,
+    SaveConfigIn,
+    SuccessOut,
+)
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+def create_app(settings: Settings) -> FastAPI:
+    app = FastAPI(title="Xpeech Deck", docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.settings = settings
+    app.state.compose = ComposeService()
+
+    @app.exception_handler(DeckError)
+    async def deck_error_handler(request: Request, exc: DeckError):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.message})
+
+    # ---------- 公开接口 ----------
+
+    @app.get("/health")
+    async def health():
+        return {"status": "ok"}
+
+    # ---------- 认证 ----------
+
+    @app.get(
+        "/api/auth/check",
+        dependencies=[Depends(require_token)],
+        response_model=AuthCheckOut,
+    )
+    async def auth_check():
+        return AuthCheckOut(authenticated=True)
+
+    # ---------- 实例管理 ----------
+
+    @app.get(
+        "/api/instances",
+        dependencies=[Depends(require_token)],
+        response_model=InstanceListOut,
+    )
+    async def get_instances():
+        instances = list_instances(settings.root_path)
+        return InstanceListOut(instances=[InstanceOut(**i) for i in instances])
+
+    @app.post(
+        "/api/instances",
+        dependencies=[Depends(require_token)],
+        response_model=InstanceOut,
+        status_code=201,
+    )
+    async def post_instance(body: CreateInstanceIn):
+        data = create_instance(settings.root_path, settings.source_dir, body.name)
+        return InstanceOut(**data)
+
+    @app.get(
+        "/api/instances/{name}/config",
+        dependencies=[Depends(require_token)],
+        response_model=InstanceConfigOut,
+    )
+    async def get_config(name: str):
+        data = read_instance_config(settings.root_path, name)
+        return InstanceConfigOut(**data)
+
+    @app.put(
+        "/api/instances/{name}/config",
+        dependencies=[Depends(require_token)],
+        response_model=SuccessOut,
+    )
+    async def put_config(name: str, body: SaveConfigIn):
+        save_instance_config(
+            settings.root_path,
+            name,
+            body.backend_port,
+            body.web_client_port,
+            body.conf_toml,
+        )
+        return SuccessOut(success=True)
+
+    # ---------- Compose 操作 ----------
+
+    @app.post(
+        "/api/instances/{name}/compose/{action}",
+        dependencies=[Depends(require_token)],
+        response_model=ComposeResultOut,
+    )
+    async def compose_action(name: str, action: str):
+        path = _recognize_instance(settings.root_path, name)
+        result = await app.state.compose.run(name, str(path), action)
+        return ComposeResultOut(**result)
+
+    @app.get(
+        "/api/instances/{name}/compose/ps",
+        dependencies=[Depends(require_token)],
+        response_model=ComposeResultOut,
+    )
+    async def compose_ps(name: str):
+        path = _recognize_instance(settings.root_path, name)
+        result = await app.state.compose.run(name, str(path), "ps")
+        return ComposeResultOut(**result)
+
+    # ---------- 前端静态资源（最后挂载，避免覆盖 /api 与 /health） ----------
+
+    if (STATIC_DIR / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
+    else:
+        @app.get("/", include_in_schema=False)
+        async def index_placeholder():
+            return JSONResponse(
+                {"detail": "前端尚未构建，请在 frontend/ 目录运行 npm install && npm run build"}
+            )
+
+    return app
