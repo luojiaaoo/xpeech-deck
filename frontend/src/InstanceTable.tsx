@@ -34,11 +34,12 @@ interface Props {
   instances: Instance[]
   loading: boolean
   busy: { name: string; action: Action } | null
+  commandBusy: boolean
   onConfig: (name: string) => void
   onCommand: (instance: Instance, action: Action) => void
 }
 
-export default function InstanceTable({ instances, loading, busy, onConfig, onCommand }: Props) {
+export default function InstanceTable({ instances, loading, busy, commandBusy, onConfig, onCommand }: Props) {
   const columns: TableProps<Instance>['columns'] = [
     { title: '实例名', dataIndex: 'name', key: 'name' },
     { title: 'Backend 端口', dataIndex: 'backend_port', key: 'backend_port', width: 130 },
@@ -66,7 +67,7 @@ export default function InstanceTable({ instances, loading, busy, onConfig, onCo
                   danger={a.danger}
                   icon={a.icon}
                   loading={rowBusy?.action === a.key}
-                  disabled={rowBusy !== null}
+                  disabled={commandBusy}
                   onClick={() => onCommand(record, a.key)}
                 >
                   {a.label}

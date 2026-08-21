@@ -7,6 +7,8 @@ import type { ImageStatus } from './types'
 interface Props {
   open: boolean
   onClose: () => void
+  blocked: boolean
+  onBusyChange: (busy: boolean) => void
 }
 
 function formatSize(value: number | null): string {
@@ -27,12 +29,17 @@ function statusTag(status: ImageStatus['status']) {
   return <Tag color="error">检查失败</Tag>
 }
 
-export default function PullImagesModal({ open, onClose }: Props) {
+export default function PullImagesModal({ open, onClose, blocked, onBusyChange }: Props) {
   const [images, setImages] = useState<ImageStatus[]>([])
   const [loading, setLoading] = useState(false)
   const [pulling, setPulling] = useState<string | null>(null)
 
   const loadImages = useCallback(async () => {
+    if (blocked) {
+      message.warning('当前有命令正在执行，请稍后重试')
+      return
+    }
+    onBusyChange(true)
     setLoading(true)
     try {
       const data = await api.listImages()
@@ -41,14 +48,22 @@ export default function PullImagesModal({ open, onClose }: Props) {
       message.error(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
+      onBusyChange(false)
     }
-  }, [])
+  }, [blocked, onBusyChange])
 
   useEffect(() => {
     if (open) void loadImages()
-  }, [open, loadImages])
+    // 只在弹窗由关闭变为打开时自动检查，避免 busy 状态变化触发重复请求。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const pullImage = async (image: ImageStatus) => {
+    if (blocked || loading || pulling !== null) {
+      message.warning('当前有命令正在执行，请稍后重试')
+      return
+    }
+    onBusyChange(true)
     setPulling(image.key)
     try {
       const result = await api.pullImage(image.key)
@@ -62,6 +77,7 @@ export default function PullImagesModal({ open, onClose }: Props) {
       message.error(error instanceof Error ? error.message : String(error))
     } finally {
       setPulling(null)
+      onBusyChange(false)
     }
   }
 
@@ -72,7 +88,13 @@ export default function PullImagesModal({ open, onClose }: Props) {
       onCancel={onClose}
       width={720}
       footer={[
-        <Button key="refresh" icon={<ReloadOutlined />} loading={loading} onClick={() => void loadImages()}>
+        <Button
+          key="refresh"
+          icon={<ReloadOutlined />}
+          loading={loading}
+          disabled={blocked || pulling !== null}
+          onClick={() => void loadImages()}
+        >
           刷新状态
         </Button>,
         <Button key="close" type="primary" onClick={onClose}>关闭</Button>,
@@ -90,7 +112,7 @@ export default function PullImagesModal({ open, onClose }: Props) {
                   type="primary"
                   icon={<CloudDownloadOutlined />}
                   loading={pulling === image.key}
-                  disabled={pulling !== null && pulling !== image.key}
+                  disabled={blocked || loading || (pulling !== null && pulling !== image.key)}
                   onClick={() => void pullImage(image)}
                 >
                   拉取 {image.label}

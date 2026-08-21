@@ -29,6 +29,8 @@ export default function App() {
   const [resultOpen, setResultOpen] = useState(false)
   const [imagesOpen, setImagesOpen] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
+  const [imageBusy, setImageBusy] = useState(false)
+  const commandBusy = busy !== null || imageBusy
 
   // 从 URL 查询参数读取 Token，只保存在内存中，并清除地址栏
   useEffect(() => {
@@ -85,6 +87,10 @@ export default function App() {
   }
 
   const runCommand = async (instance: Instance, action: Action) => {
+    if (commandBusy) {
+      message.warning('当前有命令正在执行，请稍后重试')
+      return
+    }
     setBusy({ name: instance.name, action })
     try {
       const r = await api.compose(instance.name, action)
@@ -147,7 +153,12 @@ export default function App() {
           <Button style={{ marginRight: 12 }} icon={<ReloadOutlined />} onClick={() => void loadInstances()}>
             刷新
           </Button>
-          <Button style={{ marginRight: 12 }} icon={<CloudDownloadOutlined />} onClick={() => setImagesOpen(true)}>
+          <Button
+            style={{ marginRight: 12 }}
+            icon={<CloudDownloadOutlined />}
+            disabled={commandBusy}
+            onClick={() => setImagesOpen(true)}
+          >
             拉取镜像
           </Button>
           <Button style={{ marginRight: 12 }} icon={<CodeOutlined />} onClick={() => setConsoleOpen(true)}>
@@ -163,6 +174,7 @@ export default function App() {
           instances={instances}
           loading={loading}
           busy={busy}
+          commandBusy={commandBusy}
           onConfig={(name) => setConfigName(name)}
           onCommand={handleCommand}
         />
@@ -179,7 +191,12 @@ export default function App() {
         onSaved={handleConfigSaved}
       />
       <CommandResultModal open={resultOpen} result={result} onClose={() => setResultOpen(false)} />
-      <PullImagesModal open={imagesOpen} onClose={() => setImagesOpen(false)} />
+      <PullImagesModal
+        open={imagesOpen}
+        blocked={busy !== null}
+        onBusyChange={setImageBusy}
+        onClose={() => setImagesOpen(false)}
+      />
       <SystemConsoleModal open={consoleOpen} onClose={() => setConsoleOpen(false)} />
     </Layout>
   )

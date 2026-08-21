@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from .auth import require_token
 from .compose_service import ComposeService
 from .console_service import ConsoleBroker
+from .command_gate import CommandGate
 from .config import Settings
 from .errors import DeckError
 from .image_service import ImageService
@@ -43,8 +44,9 @@ def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Xpeech Deck", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
     app.state.console = ConsoleBroker()
-    app.state.compose = ComposeService(console=app.state.console)
-    app.state.images = ImageService(console=app.state.console)
+    app.state.command_gate = CommandGate()
+    app.state.compose = ComposeService(console=app.state.console, gate=app.state.command_gate)
+    app.state.images = ImageService(console=app.state.console, gate=app.state.command_gate)
 
     @app.exception_handler(DeckError)
     async def deck_error_handler(request: Request, exc: DeckError):

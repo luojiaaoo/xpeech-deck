@@ -8,8 +8,9 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
-from .errors import CommandTimeoutError, ConflictError, NotFoundError
+from .errors import CommandTimeoutError, NotFoundError
 from .console_service import ConsoleBroker, communicate_with_console
+from .command_gate import CommandGate
 
 
 @dataclass(frozen=True)
@@ -44,12 +45,13 @@ class ImageService:
         inspect_timeout: int = 30,
         pull_timeout: int = 1800,
         console: ConsoleBroker | None = None,
+        gate: CommandGate | None = None,
     ) -> None:
         self._runner = runner or self._spawn
         self._inspect_timeout = inspect_timeout
         self._pull_timeout = pull_timeout
-        self._locks = {spec.key: asyncio.Lock() for spec in IMAGE_SPECS}
         self._console = console
+        self._gate = gate or CommandGate()
 
     async def _spawn(self, cmd: list[str]):
         return await asyncio.create_subprocess_exec(
@@ -107,7 +109,7 @@ class ImageService:
             (stderr or b"").decode(errors="replace"),
         )
 
-    async def inspect(self, key: str) -> dict[str, Any]:
+    async def _inspect_unlocked(self, key: str) -> dict[str, Any]:
         spec = self._spec(key)
         exit_code, stdout, stderr = await self._execute(
             ["docker", "image", "inspect", spec.name],
@@ -144,20 +146,26 @@ class ImageService:
         except (json.JSONDecodeError, TypeError, AttributeError):
             return {**base, "status": "error", "message": "无法解析 Docker 镜像信息"}
 
+    async def inspect(self, key: str) -> dict[str, Any]:
+        spec = self._spec(key)
+        async with self._gate.hold(f"检查镜像：{spec.name}"):
+            return await self._inspect_unlocked(key)
+
     async def list_statuses(self) -> list[dict[str, Any]]:
-        return await asyncio.gather(*(self.inspect(spec.key) for spec in IMAGE_SPECS))
+        async with self._gate.hold("检查镜像状态"):
+            results: list[dict[str, Any]] = []
+            for spec in IMAGE_SPECS:
+                results.append(await self._inspect_unlocked(spec.key))
+            return results
 
     async def pull(self, key: str) -> dict[str, Any]:
         spec = self._spec(key)
-        lock = self._locks[key]
-        if lock.locked():
-            raise ConflictError(f"{spec.label}正在拉取，请稍后重试")
-        async with lock:
+        async with self._gate.hold(f"拉取镜像：{spec.name}"):
             exit_code, stdout, stderr = await self._execute(
                 ["docker", "pull", spec.name],
                 self._pull_timeout,
             )
-            image = await self.inspect(key)
+            image = await self._inspect_unlocked(key)
             return {
                 "success": exit_code == 0,
                 "exit_code": exit_code,

@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 
 from .errors import CommandTimeoutError, ConflictError
 from .console_service import ConsoleBroker, communicate_with_console
+from .command_gate import CommandGate
 
 # 操作名 -> 命令参数（禁止 shell=True，参数以列表传递，防止注入）
 ACTIONS: dict[str, list[str]] = {
@@ -30,22 +31,19 @@ DEFAULT_TIMEOUTS: dict[str, int] = {
 
 
 class ComposeService:
-    """统一的 Compose 命令执行器。
-
-    runner 可注入以便测试；每个实例一把 asyncio.Lock，保证同一实例
-    同一时间只执行一个命令，重复请求返回 409。
-    """
+    """统一的 Compose 命令执行器，所有实例共用平台级命令锁。"""
 
     def __init__(
         self,
         runner: Callable[[list[str], str], Awaitable] | None = None,
         timeouts: dict[str, int] | None = None,
         console: ConsoleBroker | None = None,
+        gate: CommandGate | None = None,
     ) -> None:
         self._runner = runner or self._spawn
         self._timeouts: dict[str, int] = {**DEFAULT_TIMEOUTS, **(timeouts or {})}
-        self._locks: dict[str, asyncio.Lock] = {}
         self._console = console
+        self._gate = gate or CommandGate()
 
     async def _spawn(self, cmd: list[str], cwd: str):
         return await asyncio.create_subprocess_exec(
@@ -58,10 +56,7 @@ class ComposeService:
     async def run(self, name: str, path: str, action: str) -> dict:
         if action not in ACTIONS:
             raise ConflictError(f"不支持的操作：{action}")
-        lock = self._locks.setdefault(name, asyncio.Lock())
-        if lock.locked():
-            raise ConflictError(f"实例 {name} 正在执行命令，请稍后重试")
-        async with lock:
+        async with self._gate.hold(f"实例 {name}：docker compose {action}"):
             return await self._execute(ACTIONS[action], path, self._timeouts[action])
 
     async def _execute(self, cmd: list[str], cwd: str, timeout: int) -> dict:
