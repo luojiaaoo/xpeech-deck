@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .auth import require_token
 from .compose_service import ComposeService
+from .console_service import ConsoleBroker
 from .config import Settings
 from .errors import DeckError
 from .image_service import ImageService
@@ -40,8 +42,9 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Xpeech Deck", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
-    app.state.compose = ComposeService()
-    app.state.images = ImageService()
+    app.state.console = ConsoleBroker()
+    app.state.compose = ComposeService(console=app.state.console)
+    app.state.images = ImageService(console=app.state.console)
 
     @app.exception_handler(DeckError)
     async def deck_error_handler(request: Request, exc: DeckError):
@@ -62,6 +65,29 @@ def create_app(settings: Settings) -> FastAPI:
     )
     async def auth_check():
         return AuthCheckOut(authenticated=True)
+
+    # ---------- 系统 Console ----------
+
+    @app.get(
+        "/api/console/stream",
+        dependencies=[Depends(require_token)],
+    )
+    async def console_stream(request: Request):
+        async def events():
+            async for event in app.state.console.subscribe():
+                if await request.is_disconnected():
+                    break
+                if event is None:
+                    yield ": keep-alive\n\n"
+                else:
+                    payload = json.dumps(event, ensure_ascii=False)
+                    yield f"data: {payload}\n\n"
+
+        return StreamingResponse(
+            events(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     # ---------- Docker 镜像 ----------
 

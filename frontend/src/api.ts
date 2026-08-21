@@ -1,4 +1,4 @@
-import type { ComposeResult, ImagePullResult, ImageStatus, Instance, InstanceConfig } from './types'
+import type { ComposeResult, ConsoleEvent, ImagePullResult, ImageStatus, Instance, InstanceConfig } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -80,4 +80,52 @@ export function listImages(): Promise<{ images: ImageStatus[] }> {
 
 export function pullImage(key: string): Promise<ImagePullResult> {
   return request(`/api/images/${encodeURIComponent(key)}/pull`, { method: 'POST' })
+}
+
+export async function streamConsole(
+  signal: AbortSignal,
+  onEvent: (event: ConsoleEvent) => void,
+  onConnected: () => void,
+): Promise<void> {
+  const res = await fetch('/api/console/stream', { headers: headers(), signal })
+  if (!res.ok) {
+    if (res.status === 404) {
+      throw new ApiError(404, 'Console 接口尚未加载，请重启 Xpeech Deck 后端进程')
+    }
+    let detail = res.statusText
+    try {
+      const body = await res.json()
+      if (body?.detail) detail = String(body.detail)
+    } catch {
+      // 保留状态文本
+    }
+    throw new ApiError(res.status, detail)
+  }
+  if (!res.body) throw new Error('浏览器不支持流式响应')
+
+  onConnected()
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value, { stream: !done })
+    const blocks = buffer.split(/\r?\n\r?\n/)
+    buffer = blocks.pop() ?? ''
+    for (const block of blocks) {
+      const data = block
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('data:'))
+        .map((line) => line.slice(5).trimStart())
+        .join('\n')
+      if (!data) continue
+      try {
+        onEvent(JSON.parse(data) as ConsoleEvent)
+      } catch {
+        // 忽略单条损坏事件，保持后续流继续读取
+      }
+    }
+    if (done) break
+  }
 }

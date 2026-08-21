@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 
 from .errors import CommandTimeoutError, ConflictError
+from .console_service import ConsoleBroker, communicate_with_console
 
 # 操作名 -> 命令参数（禁止 shell=True，参数以列表传递，防止注入）
 ACTIONS: dict[str, list[str]] = {
@@ -39,10 +40,12 @@ class ComposeService:
         self,
         runner: Callable[[list[str], str], Awaitable] | None = None,
         timeouts: dict[str, int] | None = None,
+        console: ConsoleBroker | None = None,
     ) -> None:
         self._runner = runner or self._spawn
         self._timeouts: dict[str, int] = {**DEFAULT_TIMEOUTS, **(timeouts or {})}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._console = console
 
     async def _spawn(self, cmd: list[str], cwd: str):
         return await asyncio.create_subprocess_exec(
@@ -62,9 +65,23 @@ class ComposeService:
             return await self._execute(ACTIONS[action], path, self._timeouts[action])
 
     async def _execute(self, cmd: list[str], cwd: str, timeout: int) -> dict:
-        proc = await self._runner(cmd, cwd)
+        if self._console is not None:
+            await self._console.command(cmd, source="compose", target=cwd, cwd=cwd)
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout)
+            proc = await self._runner(cmd, cwd)
+        except Exception as exc:
+            if self._console is not None:
+                await self._console.publish("stderr", f"{exc}\n", source="compose", target=cwd, cwd=cwd)
+            raise
+        try:
+            stdout, stderr = await communicate_with_console(
+                proc,
+                timeout=timeout,
+                console=self._console,
+                source="compose",
+                target=cwd,
+                cwd=cwd,
+            )
         except asyncio.TimeoutError:
             if proc.returncode is None:
                 proc.kill()
@@ -72,7 +89,18 @@ class ComposeService:
                     await asyncio.wait_for(proc.communicate(), 10)
                 except Exception:
                     pass
+            if self._console is not None:
+                await self._console.publish("system", "命令执行超时\n", source="compose", target=cwd, cwd=cwd)
             raise CommandTimeoutError("命令执行超时")
+        if self._console is not None:
+            await self._console.publish(
+                "exit",
+                f"进程退出，代码 {proc.returncode}\n",
+                source="compose",
+                target=cwd,
+                cwd=cwd,
+                exit_code=proc.returncode,
+            )
         return {
             "success": proc.returncode == 0,
             "exit_code": proc.returncode,

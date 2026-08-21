@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Layout, Modal, Result, Typography, message } from 'antd'
-import { CloudDownloadOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { CloudDownloadOutlined, CodeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import InstanceTable, { type Action } from './InstanceTable'
 import CreateInstanceModal from './CreateInstanceModal'
 import ConfigInstanceModal from './ConfigInstanceModal'
 import CommandResultModal from './CommandResultModal'
 import PullImagesModal from './PullImagesModal'
+import SystemConsoleModal from './SystemConsoleModal'
 import * as api from './api'
 import type { ComposeResult, Instance } from './types'
 
@@ -27,6 +28,7 @@ export default function App() {
   const [result, setResult] = useState<ComposeResult | null>(null)
   const [resultOpen, setResultOpen] = useState(false)
   const [imagesOpen, setImagesOpen] = useState(false)
+  const [consoleOpen, setConsoleOpen] = useState(false)
 
   // 从 URL 查询参数读取 Token，只保存在内存中，并清除地址栏
   useEffect(() => {
@@ -122,7 +124,17 @@ export default function App() {
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
-      <Header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Header
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          minHeight: 64,
+          height: 'auto',
+          paddingBlock: 8,
+          lineHeight: 'normal',
+        }}
+      >
         <div>
           <Typography.Title level={3} style={{ color: '#fff', margin: 0 }}>
             Xpeech Deck
@@ -137,6 +149,9 @@ export default function App() {
           </Button>
           <Button style={{ marginRight: 12 }} icon={<CloudDownloadOutlined />} onClick={() => setImagesOpen(true)}>
             拉取镜像
+          </Button>
+          <Button style={{ marginRight: 12 }} icon={<CodeOutlined />} onClick={() => setConsoleOpen(true)}>
+            Console
           </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
             添加实例
@@ -165,6 +180,7 @@ export default function App() {
       />
       <CommandResultModal open={resultOpen} result={result} onClose={() => setResultOpen(false)} />
       <PullImagesModal open={imagesOpen} onClose={() => setImagesOpen(false)} />
+      <SystemConsoleModal open={consoleOpen} onClose={() => setConsoleOpen(false)} />
     </Layout>
   )
 }

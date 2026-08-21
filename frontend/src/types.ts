@@ -33,3 +33,14 @@ export interface ImageStatus {
 export interface ImagePullResult extends ComposeResult {
   image: ImageStatus
 }
+
+export interface ConsoleEvent {
+  sequence: number
+  timestamp: string
+  kind: 'command' | 'stdout' | 'stderr' | 'exit' | 'system'
+  source: 'compose' | 'image'
+  target: string
+  cwd: string
+  text: string
+  exit_code: number | null
+}

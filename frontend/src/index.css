@@ -19,3 +19,58 @@
 .image-details {
   margin-top: 10px;
 }
+
+.system-console {
+  height: 520px;
+  overflow: auto;
+  margin-bottom: 12px;
+  padding: 14px 16px;
+  border: 1px solid #263648;
+  border-radius: 6px;
+  background: #07111d;
+  color: #c8d6e5;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.console-line {
+  display: flex;
+  align-items: flex-start;
+  min-height: 20px;
+}
+
+.console-time {
+  flex: 0 0 auto;
+  color: #63768a;
+  margin-right: 8px;
+}
+
+.console-source {
+  flex: 0 0 auto;
+  color: #8da2b8;
+  margin-right: 8px;
+}
+
+.console-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.console-command .console-text {
+  color: #65d1ff;
+  font-weight: 600;
+}
+
+.console-stderr .console-text,
+.console-system .console-text {
+  color: #ff7b72;
+}
+
+.console-exit .console-text {
+  color: #7ee787;
+}
+
+.console-empty {
+  color: #63768a;
+}

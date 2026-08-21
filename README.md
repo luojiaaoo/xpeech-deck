@@ -6,6 +6,7 @@ Xpeech 简易多实例管理平台：在指定目录中复制并管理多个 [Xp
 - 在线配置 Backend / Web Client 端口与 `conf.toml`
 - 执行常用 Docker Compose 命令（Up / Start / Stop / Restart / Down / PS）
 - 查看并拉取 Xpeech 构建基础镜像与 Browserless 镜像
+- 通过 System Console 实时查看平台执行的 Docker 命令与响应
 - 通过 URL Token 直接进入，无账号和登录页面
 
 ## 前置依赖
@@ -118,6 +119,12 @@ http://localhost:7800/?token=your-token
 
 弹窗展示镜像是否已存在，并在存在时显示镜像 ID、大小和创建时间。每个镜像可单独拉取，拉取完成后自动刷新对应状态。
 
+### System Console
+
+点击顶部「Console」打开系统控制台。Compose 操作以及镜像检查、拉取产生的命令、stdout、stderr 和退出码会实时展示；弹窗关闭期间的事件仍保留在后端内存中，重新打开时自动回放。控制台内容不写入文件，平台进程重启后清空。
+
+更新到带 Console 的版本后必须重启 Xpeech Deck 后端进程，使 `/api/console/stream` 路由完成注册；仅重新构建前端会出现“Console 接口尚未加载”的提示。
+
 ## 开发
 
 ### 后端测试
@@ -126,7 +133,7 @@ http://localhost:7800/?token=your-token
 uv run pytest
 ```
 
-覆盖：认证、实例创建与忽略规则、实例列表、配置编辑（端口/TOML 校验）、Compose 命令参数/超时/互斥、镜像状态检查与拉取。
+覆盖：认证、实例创建与忽略规则、实例列表、配置编辑（端口/TOML 校验）、Compose 命令参数/超时/互斥、镜像状态检查与拉取、系统控制台缓存与流式输出。
 
 ### 前端开发
 
@@ -154,6 +161,8 @@ xpeech-deck/
 │   ├── auth.py                 # URL Token 认证
 │   ├── instance_service.py     # 实例发现/创建/配置
 │   ├── compose_service.py      # Compose 执行器（超时+互斥）
+│   ├── image_service.py        # 镜像检查与拉取
+│   ├── console_service.py      # 系统控制台事件缓存与广播
 │   ├── schemas.py              # Pydantic 模型
 │   └── static/                 # 前端构建产物
 ├── frontend/                   # React + TypeScript + Vite + Ant Design

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .errors import CommandTimeoutError, ConflictError, NotFoundError
+from .console_service import ConsoleBroker, communicate_with_console
 
 
 @dataclass(frozen=True)
@@ -42,11 +43,13 @@ class ImageService:
         *,
         inspect_timeout: int = 30,
         pull_timeout: int = 1800,
+        console: ConsoleBroker | None = None,
     ) -> None:
         self._runner = runner or self._spawn
         self._inspect_timeout = inspect_timeout
         self._pull_timeout = pull_timeout
         self._locks = {spec.key: asyncio.Lock() for spec in IMAGE_SPECS}
+        self._console = console
 
     async def _spawn(self, cmd: list[str]):
         return await asyncio.create_subprocess_exec(
@@ -63,9 +66,23 @@ class ImageService:
         raise NotFoundError(f"未知镜像：{key}")
 
     async def _execute(self, cmd: list[str], timeout: int) -> tuple[int, str, str]:
-        proc = await self._runner(cmd)
+        target = cmd[-1]
+        if self._console is not None:
+            await self._console.command(cmd, source="image", target=target)
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout)
+            proc = await self._runner(cmd)
+        except Exception as exc:
+            if self._console is not None:
+                await self._console.publish("stderr", f"{exc}\n", source="image", target=target)
+            raise
+        try:
+            stdout, stderr = await communicate_with_console(
+                proc,
+                timeout=timeout,
+                console=self._console,
+                source="image",
+                target=target,
+            )
         except asyncio.TimeoutError:
             if proc.returncode is None:
                 proc.kill()
@@ -73,7 +90,17 @@ class ImageService:
                     await asyncio.wait_for(proc.communicate(), 10)
                 except Exception:
                     pass
+            if self._console is not None:
+                await self._console.publish("system", "镜像操作超时\n", source="image", target=target)
             raise CommandTimeoutError("镜像操作超时")
+        if self._console is not None:
+            await self._console.publish(
+                "exit",
+                f"进程退出，代码 {proc.returncode}\n",
+                source="image",
+                target=target,
+                exit_code=proc.returncode,
+            )
         return (
             int(proc.returncode),
             (stdout or b"").decode(errors="replace"),
