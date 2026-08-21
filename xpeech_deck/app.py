@@ -12,6 +12,7 @@ from .auth import require_token
 from .compose_service import ComposeService
 from .config import Settings
 from .errors import DeckError
+from .image_service import ImageService
 from .instance_service import (
     _recognize_instance,
     create_instance,
@@ -26,6 +27,9 @@ from .schemas import (
     InstanceConfigOut,
     InstanceListOut,
     InstanceOut,
+    ImageListOut,
+    ImagePullOut,
+    ImageStatusOut,
     SaveConfigIn,
     SuccessOut,
 )
@@ -37,6 +41,7 @@ def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Xpeech Deck", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
     app.state.compose = ComposeService()
+    app.state.images = ImageService()
 
     @app.exception_handler(DeckError)
     async def deck_error_handler(request: Request, exc: DeckError):
@@ -57,6 +62,26 @@ def create_app(settings: Settings) -> FastAPI:
     )
     async def auth_check():
         return AuthCheckOut(authenticated=True)
+
+    # ---------- Docker 镜像 ----------
+
+    @app.get(
+        "/api/images",
+        dependencies=[Depends(require_token)],
+        response_model=ImageListOut,
+    )
+    async def get_images():
+        images = await app.state.images.list_statuses()
+        return ImageListOut(images=[ImageStatusOut(**image) for image in images])
+
+    @app.post(
+        "/api/images/{key}/pull",
+        dependencies=[Depends(require_token)],
+        response_model=ImagePullOut,
+    )
+    async def pull_image(key: str):
+        result = await app.state.images.pull(key)
+        return ImagePullOut(**result)
 
     # ---------- 实例管理 ----------
 

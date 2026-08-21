@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Button, Layout, Modal, Result, Typography, message } from 'antd'
-import { PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { CloudDownloadOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
 import InstanceTable, { type Action } from './InstanceTable'
 import CreateInstanceModal from './CreateInstanceModal'
 import ConfigInstanceModal from './ConfigInstanceModal'
 import CommandResultModal from './CommandResultModal'
+import PullImagesModal from './PullImagesModal'
 import * as api from './api'
 import type { ComposeResult, Instance } from './types'
 
@@ -25,6 +26,7 @@ export default function App() {
   const [configName, setConfigName] = useState<string | null>(null)
   const [result, setResult] = useState<ComposeResult | null>(null)
   const [resultOpen, setResultOpen] = useState(false)
+  const [imagesOpen, setImagesOpen] = useState(false)
 
   // 从 URL 查询参数读取 Token，只保存在内存中，并清除地址栏
   useEffect(() => {
@@ -133,6 +135,9 @@ export default function App() {
           <Button style={{ marginRight: 12 }} icon={<ReloadOutlined />} onClick={() => void loadInstances()}>
             刷新
           </Button>
+          <Button style={{ marginRight: 12 }} icon={<CloudDownloadOutlined />} onClick={() => setImagesOpen(true)}>
+            拉取镜像
+          </Button>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
             添加实例
           </Button>
@@ -159,6 +164,7 @@ export default function App() {
         onSaved={handleConfigSaved}
       />
       <CommandResultModal open={resultOpen} result={result} onClose={() => setResultOpen(false)} />
+      <PullImagesModal open={imagesOpen} onClose={() => setImagesOpen(false)} />
     </Layout>
   )
 }

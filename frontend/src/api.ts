@@ -1,4 +1,4 @@
-import type { ComposeResult, Instance, InstanceConfig } from './types'
+import type { ComposeResult, ImagePullResult, ImageStatus, Instance, InstanceConfig } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -72,4 +72,12 @@ export function compose(name: string, action: string): Promise<ComposeResult> {
   return request(`/api/instances/${encodeURIComponent(name)}/compose/${action}`, {
     method: action === 'ps' ? 'GET' : 'POST',
   })
+}
+
+export function listImages(): Promise<{ images: ImageStatus[] }> {
+  return request('/api/images')
+}
+
+export function pullImage(key: string): Promise<ImagePullResult> {
+  return request(`/api/images/${encodeURIComponent(key)}/pull`, { method: 'POST' })
 }

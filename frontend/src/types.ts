@@ -18,3 +18,18 @@ export interface ComposeResult {
   stdout: string
   stderr: string
 }
+
+export interface ImageStatus {
+  key: string
+  label: string
+  name: string
+  status: 'available' | 'missing' | 'error'
+  image_id: string | null
+  size_bytes: number | null
+  created_at: string | null
+  message: string
+}
+
+export interface ImagePullResult extends ComposeResult {
+  image: ImageStatus
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pydantic import BaseModel
+from typing import Literal
 
 
 class InstanceOut(BaseModel):
@@ -47,3 +48,22 @@ class AuthCheckOut(BaseModel):
 
 class SuccessOut(BaseModel):
     success: bool
+
+
+class ImageStatusOut(BaseModel):
+    key: str
+    label: str
+    name: str
+    status: Literal["available", "missing", "error"]
+    image_id: str | None = None
+    size_bytes: int | None = None
+    created_at: str | None = None
+    message: str = ""
+
+
+class ImageListOut(BaseModel):
+    images: list[ImageStatusOut]
+
+
+class ImagePullOut(ComposeResultOut):
+    image: ImageStatusOut

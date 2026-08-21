@@ -5,6 +5,7 @@ Xpeech 简易多实例管理平台：在指定目录中复制并管理多个 [Xp
 - 按实例名复制一份 Xpeech
 - 在线配置 Backend / Web Client 端口与 `conf.toml`
 - 执行常用 Docker Compose 命令（Up / Start / Stop / Restart / Down / PS）
+- 查看并拉取 Xpeech 构建基础镜像与 Browserless 镜像
 - 通过 URL Token 直接进入，无账号和登录页面
 
 ## 前置依赖
@@ -108,6 +109,15 @@ http://localhost:7800/?token=your-token
 - `Down` 有确认提示，只下线容器，不删除实例目录和数据；
 - 不保存任何执行历史，不自动刷新状态。
 
+### 拉取镜像
+
+点击顶部「拉取镜像」可检查并分别拉取：
+
+- `docker.1panel.live/library/ubuntu:22.04`：Xpeech Dockerfile 使用的基础镜像；
+- `ghcr.io/browserless/chromium:v2.55.0`：Xpeech Compose 使用的 Browserless 镜像。
+
+弹窗展示镜像是否已存在，并在存在时显示镜像 ID、大小和创建时间。每个镜像可单独拉取，拉取完成后自动刷新对应状态。
+
 ## 开发
 
 ### 后端测试
@@ -116,7 +126,7 @@ http://localhost:7800/?token=your-token
 uv run pytest
 ```
 
-覆盖：认证、实例创建与忽略规则、实例列表、配置编辑（端口/TOML 校验）、Compose 命令参数/超时/互斥。
+覆盖：认证、实例创建与忽略规则、实例列表、配置编辑（端口/TOML 校验）、Compose 命令参数/超时/互斥、镜像状态检查与拉取。
 
 ### 前端开发
 
