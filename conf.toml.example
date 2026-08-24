@@ -1,8 +1,11 @@
 # Xpeech Deck 平台配置
 # 复制本文件为 conf.toml 并填写真实值（conf.toml 已加入 .gitignore，不会提交到 Git）
 
-# 访问平台的 Token，通过 http://localhost:7800/?token=xxx 传入
+# 访问平台的 Token，通过 http://localhost:<listen_port>/?token=xxx 传入
 token = "change-me"
+
+# Xpeech Deck 自身监听端口（可选，默认 7801）
+listen_port = 7801
 
 # 所有 Xpeech 实例的父目录，创建/扫描实例都在此目录下进行
 # Linux 示例："/opt/xpeech-instances"

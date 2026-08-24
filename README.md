@@ -45,11 +45,12 @@ cd ..
 ```toml
 token = "replace-with-your-token"
 root_path = "/opt/xpeech-instances"      # Windows 示例："E:/xpeech-instances"
+listen_port = 7801                       # 可选，Deck 自身监听端口
 ```
 
 启动时平台会：
 
-1. 读取项目根目录的 `conf.toml`，校验 `token` 非空；
+1. 读取项目根目录的 `conf.toml`，校验 `token` 非空、`listen_port` 为有效端口；
 2. 将 `root_path` 转为绝对路径，不存在则自动创建；
 3. 检查 `docker` 与 `git` 命令是否可执行（缺失时仅告警，对应操作会失败）。
 
@@ -60,14 +61,14 @@ uv run python -m xpeech_deck
 # 或安装后使用命令：xpeech-deck
 ```
 
-平台监听 `http://localhost:7800`。
+平台默认监听 `http://localhost:7801`；可通过 `conf.toml` 的 `listen_port` 修改。
 
 ### 访问
 
 使用带 Token 的地址直接进入：
 
 ```text
-http://localhost:7800/?token=your-token
+http://localhost:7801/?token=your-token
 ```
 
 - Token 只保存在页面内存中，打开页面后自动从地址栏清除；
@@ -148,10 +149,10 @@ uv run pytest
 
 ```bash
 cd frontend
-npm run dev   # 开发服务器 :5173，/api 与 /health 代理到 :7800
+npm run dev   # 开发服务器 :5173，/api 与 /health 默认代理到 :7801
 ```
 
-后端需先启动（`uv run python -m xpeech_deck`）。生产构建：
+后端需先启动（`uv run python -m xpeech_deck`）。如果修改了后端监听端口，开发前端时可通过 `VITE_BACKEND_URL` 指定代理目标，例如 `VITE_BACKEND_URL=http://localhost:9000 npm run dev`。生产构建：
 
 ```bash
 cd frontend
@@ -163,7 +164,7 @@ npm run build   # 产物输出到 ../xpeech_deck/static/，由 FastAPI 统一托
 ```text
 xpeech-deck/
 ├── xpeech_deck/                # 后端
-│   ├── __main__.py             # 入口（uvicorn :7800）
+│   ├── __main__.py             # 入口（uvicorn :listen_port）
 │   ├── app.py                  # FastAPI 路由与静态托管
 │   ├── config.py               # conf.toml 读取与启动检查
 │   ├── auth.py                 # URL Token 认证

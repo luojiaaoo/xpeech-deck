@@ -16,7 +16,7 @@ def main() -> None:
     if not git_available():
         print("[警告] 未检测到 git 命令，实例创建、更新与版本切换将会失败。")
     app = create_app(settings)
-    uvicorn.run(app, host="0.0.0.0", port=7801)
+    uvicorn.run(app, host="0.0.0.0", port=settings.listen_port)
 
 
 if __name__ == "__main__":

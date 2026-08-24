@@ -16,6 +16,7 @@ class Settings:
     token: str
     root_path: Path
     console_log_path: Path | None = None
+    listen_port: int = 7801
 
 
 def load_settings(path: Path | None = None) -> Settings:
@@ -49,10 +50,17 @@ def load_settings(path: Path | None = None) -> Settings:
     else:
         console_log_path = root_path / ".xpeech-deck" / "console.jsonl"
 
+    listen_port = data.get("listen_port", 7801)
+    if isinstance(listen_port, bool) or not isinstance(listen_port, int):
+        raise ValueError("conf.toml 中的 listen_port 必须是 1–65535 之间的整数")
+    if not 1 <= listen_port <= 65535:
+        raise ValueError("conf.toml 中的 listen_port 必须是 1–65535 之间的整数")
+
     return Settings(
         token=token,
         root_path=root_path,
         console_log_path=console_log_path,
+        listen_port=listen_port,
     )
 
 
