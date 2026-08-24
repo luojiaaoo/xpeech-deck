@@ -59,6 +59,16 @@ async def test_inspect_failure_reports_error():
     assert "Docker daemon" in image["message"]
 
 
+async def test_missing_docker_command_reports_error_instead_of_raising():
+    async def runner(cmd):
+        raise FileNotFoundError(2, "No such file or directory", "docker")
+
+    images = await ImageService(runner=runner).list_statuses()
+
+    assert all(image["status"] == "error" for image in images)
+    assert all("无法启动 Docker 命令" in image["message"] for image in images)
+
+
 async def test_pull_uses_fixed_image_and_refreshes_status():
     commands: list[list[str]] = []
 

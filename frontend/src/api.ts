@@ -1,4 +1,14 @@
-import type { ComposeResult, ConsoleEvent, ImagePullResult, ImageStatus, Instance, InstanceConfig } from './types'
+import type {
+  ComposeResult,
+  ConsoleEvent,
+  GitFetchResult,
+  ImagePullResult,
+  ImageStatus,
+  Instance,
+  InstanceConfig,
+  InstanceVersions,
+  SwitchVersionResult,
+} from './types'
 
 export class ApiError extends Error {
   status: number
@@ -50,6 +60,22 @@ export function createInstance(name: string): Promise<Instance> {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
+  })
+}
+
+export function fetchAllInstances(): Promise<{ results: GitFetchResult[] }> {
+  return request('/api/instances/fetch', { method: 'POST' })
+}
+
+export function getVersions(name: string): Promise<InstanceVersions> {
+  return request(`/api/instances/${encodeURIComponent(name)}/versions`)
+}
+
+export function switchVersion(name: string, ref: string): Promise<SwitchVersionResult> {
+  return request(`/api/instances/${encodeURIComponent(name)}/version`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ref }),
   })
 }
 

@@ -8,3 +8,7 @@ token = "change-me"
 # Linux 示例："/opt/xpeech-instances"
 # Windows 示例："E:/xpeech-instances"
 root_path = "/opt/xpeech-instances"
+
+# System Console 持久化文件（可选）
+# 默认：<root_path>/.xpeech-deck/console.jsonl
+# console_log_path = "/var/log/xpeech-deck/console.jsonl"

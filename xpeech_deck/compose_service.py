@@ -64,10 +64,22 @@ class ComposeService:
             await self._console.command(cmd, source="compose", target=cwd, cwd=cwd)
         try:
             proc = await self._runner(cmd, cwd)
-        except Exception as exc:
+        except OSError as exc:
+            message = f"无法启动 Docker 命令：{exc}"
             if self._console is not None:
-                await self._console.publish("stderr", f"{exc}\n", source="compose", target=cwd, cwd=cwd)
-            raise
+                await self._console.publish(
+                    "stderr",
+                    f"{message}\n",
+                    source="compose",
+                    target=cwd,
+                    cwd=cwd,
+                )
+            return {
+                "success": False,
+                "exit_code": 127,
+                "stdout": "",
+                "stderr": message,
+            }
         try:
             stdout, stderr = await communicate_with_console(
                 proc,

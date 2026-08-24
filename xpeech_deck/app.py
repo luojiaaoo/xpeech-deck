@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 import json
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -15,6 +15,7 @@ from .console_service import ConsoleBroker
 from .command_gate import CommandGate
 from .config import Settings
 from .errors import DeckError
+from .git_service import GitService
 from .image_service import ImageService
 from .instance_service import (
     _recognize_instance,
@@ -33,8 +34,13 @@ from .schemas import (
     ImageListOut,
     ImagePullOut,
     ImageStatusOut,
+    GitFetchAllOut,
+    GitFetchResultOut,
+    InstanceVersionsOut,
     SaveConfigIn,
     SuccessOut,
+    SwitchVersionIn,
+    SwitchVersionOut,
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -43,10 +49,15 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 def create_app(settings: Settings) -> FastAPI:
     app = FastAPI(title="Xpeech Deck", docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
-    app.state.console = ConsoleBroker()
+    console_log_path = (
+        settings.console_log_path
+        or settings.root_path / ".xpeech-deck" / "console.jsonl"
+    )
+    app.state.console = ConsoleBroker(log_path=console_log_path)
     app.state.command_gate = CommandGate()
     app.state.compose = ComposeService(console=app.state.console, gate=app.state.command_gate)
     app.state.images = ImageService(console=app.state.console, gate=app.state.command_gate)
+    app.state.git = GitService(console=app.state.console, gate=app.state.command_gate)
 
     @app.exception_handler(DeckError)
     async def deck_error_handler(request: Request, exc: DeckError):
@@ -129,8 +140,39 @@ def create_app(settings: Settings) -> FastAPI:
         status_code=201,
     )
     async def post_instance(body: CreateInstanceIn):
-        data = create_instance(settings.root_path, settings.source_dir, body.name)
+        data = await create_instance(settings.root_path, body.name, app.state.git.clone)
         return InstanceOut(**data)
+
+    @app.post(
+        "/api/instances/fetch",
+        dependencies=[Depends(require_token)],
+        response_model=GitFetchAllOut,
+    )
+    async def fetch_instances():
+        instances = list_instances(settings.root_path)
+        paths = [(item["name"], Path(item["path"])) for item in instances]
+        results = await app.state.git.fetch_all(paths)
+        return GitFetchAllOut(results=[GitFetchResultOut(**item) for item in results])
+
+    @app.get(
+        "/api/instances/{name}/versions",
+        dependencies=[Depends(require_token)],
+        response_model=InstanceVersionsOut,
+    )
+    async def get_versions(name: str):
+        path = _recognize_instance(settings.root_path, name)
+        data = await app.state.git.versions(name, path)
+        return InstanceVersionsOut(**data)
+
+    @app.post(
+        "/api/instances/{name}/version",
+        dependencies=[Depends(require_token)],
+        response_model=SwitchVersionOut,
+    )
+    async def switch_version(name: str, body: SwitchVersionIn):
+        path = _recognize_instance(settings.root_path, name)
+        data = await app.state.git.switch(name, path, body.ref)
+        return SwitchVersionOut(**data)
 
     @app.get(
         "/api/instances/{name}/config",

@@ -73,10 +73,13 @@ class ImageService:
             await self._console.command(cmd, source="image", target=target)
         try:
             proc = await self._runner(cmd)
-        except Exception as exc:
+        except OSError as exc:
+            message = f"无法启动 Docker 命令：{exc}"
             if self._console is not None:
-                await self._console.publish("stderr", f"{exc}\n", source="image", target=target)
-            raise
+                await self._console.publish(
+                    "stderr", f"{message}\n", source="image", target=target
+                )
+            return 127, "", message
         try:
             stdout, stderr = await communicate_with_console(
                 proc,

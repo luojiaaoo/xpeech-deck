@@ -5,7 +5,7 @@ from __future__ import annotations
 import uvicorn
 
 from .app import create_app
-from .config import docker_available, ensure_root_path, load_settings
+from .config import docker_available, ensure_root_path, git_available, load_settings
 
 
 def main() -> None:
@@ -13,6 +13,8 @@ def main() -> None:
     ensure_root_path(settings.root_path)
     if not docker_available():
         print("[警告] 未检测到 docker 命令，Compose 操作将会失败。")
+    if not git_available():
+        print("[警告] 未检测到 git 命令，实例创建、更新与版本切换将会失败。")
     app = create_app(settings)
     uvicorn.run(app, host="0.0.0.0", port=7801)
 

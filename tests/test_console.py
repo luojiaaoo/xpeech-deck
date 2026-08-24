@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 
 from xpeech_deck.compose_service import ComposeService
 from xpeech_deck.console_service import ConsoleBroker, communicate_with_console
@@ -57,6 +58,42 @@ async def test_console_replays_history_then_streams_new_events():
     await subscription.aclose()
 
 
+async def test_file_backed_console_persists_across_process_restart(tmp_path):
+    log_path = tmp_path / "logs" / "console.jsonl"
+    first_process = ConsoleBroker(log_path=log_path)
+    await first_process.publish("stdout", "before restart\n", source="compose")
+
+    assert first_process._events == []
+    assert log_path.is_file()
+    records = [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
+    assert records[0]["sequence"] == 1
+
+    second_process = ConsoleBroker(log_path=log_path)
+    assert second_process.snapshot()[0]["text"] == "before restart\n"
+    await second_process.publish("stderr", "after restart\n", source="git")
+
+    history = second_process.snapshot()
+    assert [event["sequence"] for event in history] == [1, 2]
+    assert [event["text"] for event in history] == [
+        "before restart\n",
+        "after restart\n",
+    ]
+
+
+async def test_file_backed_console_ignores_malformed_lines(tmp_path):
+    log_path = tmp_path / "console.jsonl"
+    log_path.write_text(
+        '{"sequence":7,"text":"valid","kind":"stdout","source":"git"}\n'
+        "not-json\n",
+        encoding="utf-8",
+    )
+
+    console = ConsoleBroker(log_path=log_path)
+    await console.publish("stdout", "next", source="git")
+
+    assert [event["sequence"] for event in console.snapshot()] == [7, 8]
+
+
 async def test_real_stream_reader_publishes_chunks_before_completion():
     console = ConsoleBroker()
     proc = StreamingProcess()
@@ -104,3 +141,9 @@ def test_console_stream_route_is_registered(app):
         for route in app.routes
     }
     assert ("/api/console/stream", frozenset({"GET"})) in routes
+
+
+def test_application_console_uses_persistent_default_path(app, root_path):
+    assert app.state.console.log_path == (
+        root_path / ".xpeech-deck" / "console.jsonl"
+    )

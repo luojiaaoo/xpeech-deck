@@ -19,6 +19,38 @@ export interface ComposeResult {
   stderr: string
 }
 
+export interface GitVersion {
+  ref: string
+  label: string
+  kind: 'branch' | 'tag' | 'commit'
+  commit: string
+  committed_at: string | null
+}
+
+export interface InstanceVersions {
+  current_ref: string
+  current_label: string
+  current_commit: string
+  versions: GitVersion[]
+}
+
+export interface GitResult {
+  success: boolean
+  exit_code: number
+  stdout: string
+  stderr: string
+}
+
+export interface GitFetchResult extends GitResult {
+  name: string
+}
+
+export interface SwitchVersionResult extends GitResult {
+  current_ref: string
+  current_label: string
+  current_commit: string
+}
+
 export interface ImageStatus {
   key: string
   label: string
@@ -38,7 +70,7 @@ export interface ConsoleEvent {
   sequence: number
   timestamp: string
   kind: 'command' | 'stdout' | 'stderr' | 'exit' | 'system'
-  source: 'compose' | 'image'
+  source: 'compose' | 'image' | 'git'
   target: string
   cwd: string
   text: string

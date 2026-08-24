@@ -35,6 +35,46 @@ class SaveConfigIn(BaseModel):
     conf_toml: str
 
 
+class GitVersionOut(BaseModel):
+    ref: str
+    label: str
+    kind: Literal["branch", "tag", "commit"]
+    commit: str
+    committed_at: str | None = None
+
+
+class InstanceVersionsOut(BaseModel):
+    current_ref: str
+    current_label: str
+    current_commit: str
+    versions: list[GitVersionOut]
+
+
+class SwitchVersionIn(BaseModel):
+    ref: str
+
+
+class GitResultOut(BaseModel):
+    success: bool
+    exit_code: int
+    stdout: str
+    stderr: str
+
+
+class GitFetchResultOut(GitResultOut):
+    name: str
+
+
+class GitFetchAllOut(BaseModel):
+    results: list[GitFetchResultOut]
+
+
+class SwitchVersionOut(GitResultOut):
+    current_ref: str
+    current_label: str
+    current_commit: str
+
+
 class ComposeResultOut(BaseModel):
     success: bool
     exit_code: int

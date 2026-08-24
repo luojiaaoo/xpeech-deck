@@ -89,3 +89,4 @@ async def test_global_lock_is_released_after_command():
 def test_application_services_use_same_gate(app):
     assert app.state.compose._gate is app.state.command_gate
     assert app.state.images._gate is app.state.command_gate
+    assert app.state.git._gate is app.state.command_gate

@@ -32,7 +32,7 @@ class ConflictError(DeckError):
 
 
 class FileOperationError(DeckError):
-    """文件复制或读写失败（500）。"""
+    """文件或 Git 操作失败（500）。"""
 
     status_code = 500
 

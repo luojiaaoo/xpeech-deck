@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import pytest
 
+from xpeech_deck.git_service import (
+    GIT_NETWORK_OPTIONS,
+    VERSION_HISTORY_LIMIT,
+    XPEECH_REPOSITORY_URL,
+)
+
 
 def test_create_instance_success(client, auth_headers, root_path, make_instance):
     data = make_instance("demo01")
@@ -22,14 +28,12 @@ def test_create_instance_success(client, auth_headers, root_path, make_instance)
     assert "WEB_CLIENT_PORT=7939" in env
     assert "CDP_URL=ws://browserless:3000" in env
 
-    # 复制时忽略的内容
-    for ignored in (".git", ".venv", ".ruff_cache", "__pycache__", "node_modules", "docker_data"):
-        assert not (target / ignored).exists(), f"{ignored} 应被忽略"
+    # 每个实例都是可 fetch/切换版本的独立 Git 工作树。
+    assert (target / ".git").is_dir()
 
-    # 原 .env / conf.toml 中的密钥不得带入实例
-    assert "SECRET" not in env
+    # conf.toml 由示例文件初始化。
     conf = (target / "conf.toml").read_text(encoding="utf-8")
-    assert "should-be-ignored" not in conf
+    assert 'session_path = "data/session"' in conf
 
     # 源文件保持原样
     assert (target / "compose.yaml").is_file()
@@ -38,6 +42,19 @@ def test_create_instance_success(client, auth_headers, root_path, make_instance)
     assert (target / "custom_tools" / "echo.py").is_file()
     assert (target / "conf.toml").is_file()
     assert (target / ".env.example").is_file()
+
+    clone_cmd, clone_cwd = client.app.state.test_git_commands[0]
+    assert clone_cmd == [
+        "git",
+        *GIT_NETWORK_OPTIONS,
+        "clone",
+        "--depth",
+        str(VERSION_HISTORY_LIMIT),
+        "--no-single-branch",
+        XPEECH_REPOSITORY_URL,
+        str(target),
+    ]
+    assert clone_cwd == str(root_path)
 
 
 def test_create_duplicate_conflict(client, auth_headers, make_instance):

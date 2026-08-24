@@ -1,7 +1,8 @@
-"""pytest 共享 fixture：构造假的实例源目录、根目录与测试客户端。"""
+"""pytest 共享 fixture：构造假的 Git 仓库、实例根目录与测试客户端。"""
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
 import pytest
@@ -9,12 +10,13 @@ from fastapi.testclient import TestClient
 
 from xpeech_deck.app import create_app
 from xpeech_deck.config import Settings
+from xpeech_deck.git_service import GitService
 
 TOKEN = "test-token"
 
 
-def make_source(base: Path) -> Path:
-    """构造一个最小化的 xpeech 源目录，含需要保留与需要忽略的内容。"""
+def make_repository_template(base: Path) -> Path:
+    """构造一个最小化的 xpeech Git 仓库模板。"""
     src = base / "source"
     src.mkdir()
     # 需要保留的源文件
@@ -36,9 +38,7 @@ def make_source(base: Path) -> Path:
     (src / "custom_tools").mkdir()
     (src / "custom_tools" / "echo.py").write_text("def echo() -> None: ...\n", encoding="utf-8")
 
-    # 复制时必须忽略的内容
-    (src / ".env").write_text("SECRET=should-be-ignored\n", encoding="utf-8")
-    (src / "conf.toml").write_text('token = "should-be-ignored"\n', encoding="utf-8")
+    # 克隆后应保留 Git 元数据，本地配置由平台生成。
     for d in (".git", ".venv", ".ruff_cache", "__pycache__", "node_modules", "docker_data"):
         (src / d).mkdir()
     (src / ".git" / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
@@ -47,8 +47,8 @@ def make_source(base: Path) -> Path:
 
 
 @pytest.fixture
-def source_dir(tmp_path: Path) -> Path:
-    return make_source(tmp_path)
+def repository_template(tmp_path: Path) -> Path:
+    return make_repository_template(tmp_path)
 
 
 @pytest.fixture
@@ -59,13 +59,39 @@ def root_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def settings(root_path: Path, source_dir: Path) -> Settings:
-    return Settings(token=TOKEN, root_path=root_path, source_dir=source_dir)
+def settings(root_path: Path) -> Settings:
+    return Settings(token=TOKEN, root_path=root_path)
 
 
 @pytest.fixture
-def app(settings: Settings):
-    return create_app(settings)
+def app(settings: Settings, repository_template: Path):
+    application = create_app(settings)
+    git_commands: list[tuple[list[str], str]] = []
+
+    class FakeProcess:
+        returncode = 0
+        stdout = b""
+        stderr = b""
+
+        async def communicate(self):
+            return self.stdout, self.stderr
+
+        def kill(self) -> None:
+            self.returncode = -9
+
+    async def git_runner(cmd: list[str], cwd: str):
+        git_commands.append((cmd, cwd))
+        if "clone" in cmd:
+            shutil.copytree(repository_template, Path(cmd[-1]), dirs_exist_ok=True)
+        return FakeProcess()
+
+    application.state.git = GitService(
+        runner=git_runner,
+        console=application.state.console,
+        gate=application.state.command_gate,
+    )
+    application.state.test_git_commands = git_commands
+    return application
 
 
 @pytest.fixture

@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import tomllib
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from .errors import ConflictError, FileOperationError, NotFoundError, ValidationError
@@ -12,22 +13,9 @@ from .errors import ConflictError, FileOperationError, NotFoundError, Validation
 # 实例名：字母/数字开头，后续允许字母、数字、下划线、连字符，最长 63 字符
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$")
 
-# 复制实例目录时忽略的内容
-IGNORE_DIRS = {".git", ".venv", ".ruff_cache", "__pycache__", "node_modules", "docker_data"}
-IGNORE_FILES = {".env", "conf.toml"}
-
 DEFAULT_BACKEND_PORT = 7878
 DEFAULT_WEB_CLIENT_PORT = 7939
 CDP_URL = "ws://browserless:3000"
-
-
-def _ignore(src: str, names: list[str]) -> set[str]:
-    """shutil.copytree 的 ignore 回调：跳过 Git 元数据、虚拟环境、缓存与密钥文件。"""
-    ignored: set[str] = set()
-    for name in names:
-        if name in IGNORE_DIRS or name in IGNORE_FILES or name.endswith(".pyc"):
-            ignored.add(name)
-    return ignored
 
 
 def validate_name(name: str) -> str:
@@ -90,10 +78,16 @@ def _parse_port(value: object) -> int:
 
 def _recognize_instance(root_path: Path, name: str) -> Path:
     """确认 name 是已识别的实例，返回其实例目录；否则抛出 404。"""
+    name = validate_name(name)
     path = root_path / name
     env_file = path / ".env"
     compose_file = path / "compose.yaml"
-    if not path.is_dir() or not env_file.is_file() or not compose_file.is_file():
+    if (
+        path.is_symlink()
+        or not path.is_dir()
+        or not env_file.is_file()
+        or not compose_file.is_file()
+    ):
         raise NotFoundError(f"实例 {name} 不存在")
     try:
         env = parse_dotenv(env_file.read_text(encoding="utf-8"))
@@ -132,31 +126,50 @@ def list_instances(root_path: Path) -> list[dict]:
     return instances
 
 
-def create_instance(root_path: Path, source_dir: Path, name: str) -> dict:
-    """按实例名复制一份 Xpeech，生成默认 .env 与 conf.toml。"""
+async def create_instance(
+    root_path: Path,
+    name: str,
+    clone: Callable[[Path], Awaitable[dict]],
+) -> dict:
+    """从远程仓库克隆 Xpeech，生成默认 .env 与 conf.toml。"""
     name = validate_name(name)
     target = root_path / name
-    if target.exists():
+    try:
+        # 先原子占位，防止两个同名克隆同时通过 exists 检查。
+        target.mkdir()
+    except FileExistsError:
         raise ConflictError(f"实例 {name} 已存在")
-    if not source_dir.is_dir():
-        raise FileOperationError(f"实例源目录不存在：{source_dir}")
-
-    try:
-        shutil.copytree(source_dir, target, ignore=_ignore)
     except OSError as exc:
-        raise FileOperationError(f"复制实例目录失败：{exc}") from exc
+        raise FileOperationError(f"创建实例目录失败：{exc}") from exc
 
-    backend_port = DEFAULT_BACKEND_PORT
-    web_client_port = DEFAULT_WEB_CLIENT_PORT
     try:
+        result = await clone(target)
+        if not result["success"]:
+            detail = result["stderr"].strip() or result["stdout"].strip() or "未知错误"
+            raise FileOperationError(f"克隆 Xpeech 失败：{detail}")
+
+        backend_port = DEFAULT_BACKEND_PORT
+        web_client_port = DEFAULT_WEB_CLIENT_PORT
         (target / ".env").write_text(
             build_dotenv(name, backend_port, web_client_port), encoding="utf-8"
         )
         example = target / "conf.toml.example"
         if example.is_file():
             shutil.copy2(example, target / "conf.toml")
-    except OSError as exc:
-        raise FileOperationError(f"生成实例配置失败：{exc}") from exc
+    except Exception as exc:
+        # 创建是一个事务：克隆或初始化失败时不留半成品目录。
+        try:
+            if target.is_symlink():
+                target.unlink()
+            elif target.exists():
+                shutil.rmtree(target)
+        except OSError:
+            pass
+        if isinstance(exc, FileOperationError):
+            raise
+        if isinstance(exc, OSError):
+            raise FileOperationError(f"生成实例配置失败：{exc}") from exc
+        raise
 
     return {
         "name": name,

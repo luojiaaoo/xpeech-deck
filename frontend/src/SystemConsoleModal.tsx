@@ -74,7 +74,8 @@ export default function SystemConsoleModal({ open, onClose }: Props) {
         {error ? <div className="console-line console-stderr">连接失败：{error}</div> : null}
       </div>
       <Typography.Text type="secondary">
-        展示当前平台进程执行过的 Docker 命令及实时输出；平台重启后内容会清空。
+        历史从服务端 JSONL 日志文件读取，并继续显示 Git / Docker 实时输出；
+        「清空显示」不会删除日志文件。
       </Typography.Text>
     </Modal>
   )

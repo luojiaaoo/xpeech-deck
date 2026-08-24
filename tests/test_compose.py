@@ -114,6 +114,19 @@ async def test_success_result():
     assert result["stdout"] == "Container Started\n"
 
 
+async def test_missing_docker_command_returns_structured_failure():
+    async def runner(cmd, cwd):
+        raise FileNotFoundError(2, "No such file or directory", "docker")
+
+    result = await ComposeService(runner=runner).run(
+        "demo01", "/instances/demo01", "ps"
+    )
+
+    assert result["success"] is False
+    assert result["exit_code"] == 127
+    assert "无法启动 Docker 命令" in result["stderr"]
+
+
 async def test_timeout_kills_process():
     async def runner(cmd, cwd):
         return FakeProcess(hang=True, release=asyncio.Event())

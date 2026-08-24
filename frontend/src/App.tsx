@@ -7,6 +7,7 @@ import ConfigInstanceModal from './ConfigInstanceModal'
 import CommandResultModal from './CommandResultModal'
 import PullImagesModal from './PullImagesModal'
 import SystemConsoleModal from './SystemConsoleModal'
+import VersionInstanceModal from './VersionInstanceModal'
 import * as api from './api'
 import type { ComposeResult, Instance } from './types'
 
@@ -29,6 +30,7 @@ export default function App() {
   const [resultOpen, setResultOpen] = useState(false)
   const [imagesOpen, setImagesOpen] = useState(false)
   const [consoleOpen, setConsoleOpen] = useState(false)
+  const [versionName, setVersionName] = useState<string | null>(null)
   const [imageBusy, setImageBusy] = useState(false)
   const commandBusy = busy !== null || imageBusy
 
@@ -69,6 +71,40 @@ export default function App() {
   useEffect(() => {
     if (token) void loadInstances()
   }, [token, loadInstances])
+
+  // 页面登录后立即更新一次，之后每分钟 fetch 全部实例。
+  useEffect(() => {
+    if (!token) return
+    let active = true
+    let fetching = false
+
+    const fetchInstances = async () => {
+      if (!active || fetching) return
+      fetching = true
+      try {
+        await api.fetchAllInstances()
+      } catch (e) {
+        if (e instanceof api.ApiError && e.status === 401) {
+          api.setToken(null)
+          setToken(null)
+          message.error('Token 无效，请重新使用带有 ?token=xxx 的地址打开')
+        } else if (e instanceof api.ApiError && e.status === 409) {
+          // 其他受管命令正在执行，等待下一分钟自动重试。
+        } else if (active) {
+          showError(e)
+        }
+      } finally {
+        fetching = false
+      }
+    }
+
+    void fetchInstances()
+    const timer = window.setInterval(() => void fetchInstances(), 60_000)
+    return () => {
+      active = false
+      window.clearInterval(timer)
+    }
+  }, [token, showError])
 
   const handleCreate = async (name: string) => {
     try {
@@ -176,6 +212,7 @@ export default function App() {
           busy={busy}
           commandBusy={commandBusy}
           onConfig={(name) => setConfigName(name)}
+          onVersion={(name) => setVersionName(name)}
           onCommand={handleCommand}
         />
       </Content>
@@ -189,6 +226,12 @@ export default function App() {
         instanceName={configName ?? ''}
         onCancel={() => setConfigName(null)}
         onSaved={handleConfigSaved}
+      />
+      <VersionInstanceModal
+        open={versionName !== null}
+        instanceName={versionName ?? ''}
+        onCancel={() => setVersionName(null)}
+        onSwitched={() => setVersionName(null)}
       />
       <CommandResultModal open={resultOpen} result={result} onClose={() => setResultOpen(false)} />
       <PullImagesModal

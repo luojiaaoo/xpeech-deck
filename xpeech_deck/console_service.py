@@ -1,23 +1,69 @@
-"""进程内系统控制台：缓存并实时广播 Docker 命令输出。"""
+"""系统控制台：持久化并实时广播外部命令输出。"""
 
 from __future__ import annotations
 
 import asyncio
+import json
 import shlex
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, Literal
 
 ConsoleKind = Literal["command", "stdout", "stderr", "exit", "system"]
 
 
 class ConsoleBroker:
-    """保存本次进程运行期间的控制台事件，并广播给在线页面。"""
+    """将控制台事件按 JSONL 追加到文件，并广播给在线页面。"""
 
-    def __init__(self) -> None:
+    def __init__(self, log_path: Path | None = None) -> None:
+        self._log_path = log_path
+        # 未指定文件时保留内存模式，便于独立使用和单元测试。
         self._events: list[dict[str, Any]] = []
         self._subscribers: set[asyncio.Queue[dict[str, Any]]] = set()
-        self._sequence = 0
+        if self._log_path is not None:
+            self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        self._sequence = self._read_last_sequence()
+
+    @property
+    def log_path(self) -> Path | None:
+        return self._log_path
+
+    @staticmethod
+    def _decode_line(line: str) -> dict[str, Any] | None:
+        try:
+            event = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(event, dict) or not isinstance(event.get("sequence"), int):
+            return None
+        return event
+
+    def _read_last_sequence(self) -> int:
+        if self._log_path is None or not self._log_path.is_file():
+            return 0
+        last_sequence = 0
+        try:
+            with self._log_path.open("r", encoding="utf-8") as log_file:
+                for line in log_file:
+                    event = self._decode_line(line)
+                    if event is not None:
+                        last_sequence = max(last_sequence, event["sequence"])
+        except OSError:
+            return 0
+        return last_sequence
+
+    def _append(self, event: dict[str, Any]) -> None:
+        if self._log_path is None:
+            self._events.append(event)
+            return
+        try:
+            with self._log_path.open("a", encoding="utf-8") as log_file:
+                log_file.write(json.dumps(event, ensure_ascii=False, separators=(",", ":")))
+                log_file.write("\n")
+        except OSError:
+            # 日志文件短暂不可写时不阻断命令，本进程内暂存该事件。
+            self._events.append(event)
 
     async def publish(
         self,
@@ -42,7 +88,7 @@ class ConsoleBroker:
             "text": text,
             "exit_code": exit_code,
         }
-        self._events.append(event)
+        self._append(event)
         for queue in tuple(self._subscribers):
             queue.put_nowait(event)
 
@@ -63,15 +109,32 @@ class ConsoleBroker:
         )
 
     def snapshot(self) -> list[dict[str, Any]]:
-        return list(self._events)
+        if self._log_path is None:
+            return list(self._events)
+
+        events: list[dict[str, Any]] = []
+        if self._log_path.is_file():
+            try:
+                with self._log_path.open("r", encoding="utf-8") as log_file:
+                    for line in log_file:
+                        event = self._decode_line(line)
+                        if event is not None:
+                            events.append(event)
+            except OSError:
+                pass
+        events.extend(self._events)
+        events.sort(key=lambda event: event["sequence"])
+        return events
 
     async def subscribe(self) -> AsyncIterator[dict[str, Any] | None]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-        history = list(self._events)
+        # 只在前端打开 Console 建立订阅时从文件读取历史。
+        history = self.snapshot()
         self._subscribers.add(queue)
         try:
             for event in history:
                 yield event
+            history.clear()
             while True:
                 try:
                     yield await asyncio.wait_for(queue.get(), timeout=15)

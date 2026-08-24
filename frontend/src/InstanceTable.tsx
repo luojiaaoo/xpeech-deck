@@ -3,6 +3,7 @@ import { Button, Space, Table, Tooltip } from 'antd'
 import type { TableProps } from 'antd'
 import {
   CaretRightOutlined,
+  BranchesOutlined,
   CloudDownloadOutlined,
   PauseOutlined,
   PoweroffOutlined,
@@ -36,14 +37,33 @@ interface Props {
   busy: { name: string; action: Action } | null
   commandBusy: boolean
   onConfig: (name: string) => void
+  onVersion: (name: string) => void
   onCommand: (instance: Instance, action: Action) => void
 }
 
-export default function InstanceTable({ instances, loading, busy, commandBusy, onConfig, onCommand }: Props) {
+export default function InstanceTable({
+  instances,
+  loading,
+  busy,
+  commandBusy,
+  onConfig,
+  onVersion,
+  onCommand,
+}: Props) {
   const columns: TableProps<Instance>['columns'] = [
     { title: '实例名', dataIndex: 'name', key: 'name' },
     { title: 'Backend 端口', dataIndex: 'backend_port', key: 'backend_port', width: 130 },
     { title: 'Web 端口', dataIndex: 'web_client_port', key: 'web_client_port', width: 110 },
+    {
+      title: '版本',
+      key: 'version',
+      width: 100,
+      render: (_, record) => (
+        <Button icon={<BranchesOutlined />} disabled={commandBusy} onClick={() => onVersion(record.name)}>
+          切换
+        </Button>
+      ),
+    },
     {
       title: '配置',
       key: 'config',

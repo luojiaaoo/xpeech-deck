@@ -10,15 +10,12 @@ from pathlib import Path
 # 项目根目录：xpeech_deck 包所在目录的上一级
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# 实例来源：当前项目中的 xpeech 子模块目录
-SOURCE_DIR = PROJECT_ROOT / "xpeech"
-
 
 @dataclass(frozen=True)
 class Settings:
     token: str
     root_path: Path
-    source_dir: Path
+    console_log_path: Path | None = None
 
 
 def load_settings(path: Path | None = None) -> Settings:
@@ -40,8 +37,23 @@ def load_settings(path: Path | None = None) -> Settings:
     root_path = Path(raw_root).expanduser()
     if not root_path.is_absolute():
         root_path = (PROJECT_ROOT / root_path).resolve()
+    root_path = root_path.resolve()
 
-    return Settings(token=token, root_path=root_path.resolve(), source_dir=SOURCE_DIR)
+    raw_console_log = str(data.get("console_log_path", "")).strip()
+    if raw_console_log:
+        console_log_path = Path(raw_console_log).expanduser()
+        if not console_log_path.is_absolute():
+            console_log_path = (PROJECT_ROOT / console_log_path).resolve()
+        else:
+            console_log_path = console_log_path.resolve()
+    else:
+        console_log_path = root_path / ".xpeech-deck" / "console.jsonl"
+
+    return Settings(
+        token=token,
+        root_path=root_path,
+        console_log_path=console_log_path,
+    )
 
 
 def ensure_root_path(root_path: Path) -> None:
@@ -52,3 +64,8 @@ def ensure_root_path(root_path: Path) -> None:
 def docker_available() -> bool:
     """检查 docker 命令是否可执行。"""
     return shutil.which("docker") is not None
+
+
+def git_available() -> bool:
+    """检查 git 命令是否可执行。"""
+    return shutil.which("git") is not None

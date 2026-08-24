@@ -1,4 +1,4 @@
-"""平台级 Docker 命令互斥门闩。"""
+"""平台级外部命令互斥门闩。"""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from .errors import ConflictError
 
 
 class CommandGate:
-    """保证整个 Xpeech Deck 同一时间只运行一个 Docker 命令。"""
+    """保证整个 Xpeech Deck 同一时间只运行一个受管命令。"""
 
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
