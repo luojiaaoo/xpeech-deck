@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import io
 import json
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -27,8 +29,12 @@ from .instance_service import (
 from .skill_service import (
     MAX_ARCHIVE_BYTES,
     delete_custom_skill,
+    export_custom_skill,
     install_custom_skill,
     list_custom_skills,
+    migrate_custom_skill,
+    read_custom_skill_md,
+    save_custom_skill_md,
 )
 from .schemas import (
     AuthCheckOut,
@@ -37,6 +43,7 @@ from .schemas import (
     InstanceConfigOut,
     InstanceListOut,
     InstanceOut,
+    MigrateSkillIn,
     ImageListOut,
     ImagePullOut,
     ImageStatusOut,
@@ -44,7 +51,10 @@ from .schemas import (
     GitFetchResultOut,
     InstanceVersionsOut,
     SaveConfigIn,
+    SaveSkillContentIn,
+    SkillContentOut,
     SkillListOut,
+    SkillMigrationOut,
     SkillOut,
     SuccessOut,
     SwitchVersionIn,
@@ -249,6 +259,55 @@ def create_app(settings: Settings) -> FastAPI:
             overwrite=overwrite,
         )
         return SkillOut(**skill)
+
+    @app.get(
+        "/api/instances/{name}/skills/{skill_name}/content",
+        dependencies=[Depends(require_token)],
+        response_model=SkillContentOut,
+    )
+    async def get_skill_content(name: str, skill_name: str):
+        content = read_custom_skill_md(settings.root_path, name, skill_name)
+        return SkillContentOut(content=content)
+
+    @app.put(
+        "/api/instances/{name}/skills/{skill_name}/content",
+        dependencies=[Depends(require_token)],
+        response_model=SkillOut,
+    )
+    async def put_skill_content(name: str, skill_name: str, body: SaveSkillContentIn):
+        skill = save_custom_skill_md(settings.root_path, name, skill_name, body.content)
+        return SkillOut(**skill)
+
+    @app.get(
+        "/api/instances/{name}/skills/{skill_name}/download",
+        dependencies=[Depends(require_token)],
+    )
+    async def download_skill(name: str, skill_name: str):
+        content = export_custom_skill(settings.root_path, name, skill_name)
+        encoded_name = quote(f"{skill_name}.zip")
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_name}",
+                "Content-Length": str(len(content)),
+            },
+        )
+
+    @app.post(
+        "/api/instances/{name}/skills/{skill_name}/migrate",
+        dependencies=[Depends(require_token)],
+        response_model=SkillMigrationOut,
+    )
+    async def migrate_skill(name: str, skill_name: str, body: MigrateSkillIn):
+        migrated = migrate_custom_skill(
+            settings.root_path,
+            name,
+            skill_name,
+            body.target_instances,
+            overwrite=body.overwrite,
+        )
+        return SkillMigrationOut(migrated=migrated)
 
     @app.delete(
         "/api/instances/{name}/skills/{skill_name}",

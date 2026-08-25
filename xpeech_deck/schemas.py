@@ -101,6 +101,23 @@ class SkillListOut(BaseModel):
     skills: list[SkillOut]
 
 
+class SkillContentOut(BaseModel):
+    content: str
+
+
+class SaveSkillContentIn(BaseModel):
+    content: str
+
+
+class MigrateSkillIn(BaseModel):
+    target_instances: list[str]
+    overwrite: bool = False
+
+
+class SkillMigrationOut(BaseModel):
+    migrated: list[str]
+
+
 class ImageStatusOut(BaseModel):
     key: str
     label: str

@@ -16,6 +16,13 @@
   margin: 4px 0 12px;
 }
 
+.skill-editor {
+  margin-bottom: 8px;
+  font-family: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .image-details {
   margin-top: 10px;
 }

@@ -1,8 +1,9 @@
-"""实例自定义内置技能的安全安装、列出与删除。"""
+"""实例自定义内置技能的安全安装、编辑、导出、迁移与删除。"""
 
 from __future__ import annotations
 
 import io
+import os
 import re
 import shutil
 import stat
@@ -12,7 +13,7 @@ import zipfile
 from pathlib import Path, PurePosixPath
 
 from .errors import ConflictError, FileOperationError, NotFoundError, ValidationError
-from .instance_service import _recognize_instance
+from .instance_service import _recognize_instance, validate_name
 
 BUILTIN_SKILLS_RELATIVE = Path("xpeech/agent/skills/buildin")
 CUSTOM_SKILL_PREFIX = "x-"
@@ -119,6 +120,46 @@ def _skill_info(path: Path) -> dict:
         "file_count": file_count,
         "size_bytes": size_bytes,
     }
+
+
+def _custom_skill_path(root_path: Path, instance_name: str, skill_name: str) -> Path:
+    """返回一个可管理技能目录，并拒绝目录或入口文件符号链接。"""
+    skill_name = _validate_custom_name(skill_name)
+    target = _skills_root(root_path, instance_name) / skill_name
+    skill_md = target / "SKILL.md"
+    if (
+        target.is_symlink()
+        or not target.is_dir()
+        or skill_md.is_symlink()
+        or not skill_md.is_file()
+    ):
+        raise NotFoundError(f"技能 {skill_name} 不存在")
+    return target
+
+
+def _validate_skill_tree(path: Path) -> list[Path]:
+    """列出技能内普通文件，避免下载或迁移时跟随符号链接。"""
+    files: list[Path] = []
+    size_bytes = 0
+    try:
+        for child in path.rglob("*"):
+            if child.is_symlink():
+                raise FileOperationError(f"技能 {path.name} 包含符号链接，无法导出或迁移")
+            if child.is_dir():
+                continue
+            if not child.is_file():
+                raise FileOperationError(f"技能 {path.name} 包含非常规文件，无法导出或迁移")
+            files.append(child)
+            if len(files) > MAX_ARCHIVE_FILES:
+                raise FileOperationError("技能文件数超过 2000，无法导出或迁移")
+            size_bytes += child.stat().st_size
+            if size_bytes > MAX_EXTRACTED_BYTES:
+                raise FileOperationError("技能大小超过 100 MB，无法导出或迁移")
+    except FileOperationError:
+        raise
+    except OSError as exc:
+        raise FileOperationError(f"读取技能 {path.name} 失败：{exc}") from exc
+    return files
 
 
 def list_custom_skills(root_path: Path, instance_name: str) -> list[dict]:
@@ -294,12 +335,159 @@ def install_custom_skill(
     return _skill_info(target)
 
 
+def read_custom_skill_md(root_path: Path, instance_name: str, skill_name: str) -> str:
+    """读取自定义技能的 SKILL.md，供在线编辑。"""
+    target = _custom_skill_path(root_path, instance_name, skill_name)
+    skill_md = target / "SKILL.md"
+    try:
+        if skill_md.stat().st_size > MAX_SKILL_MD_BYTES:
+            raise ValidationError("SKILL.md 不能超过 1 MB")
+        return skill_md.read_text(encoding="utf-8")
+    except ValidationError:
+        raise
+    except UnicodeError as exc:
+        raise ValidationError("SKILL.md 必须使用 UTF-8 编码") from exc
+    except OSError as exc:
+        raise FileOperationError(f"读取技能 {skill_name} 失败：{exc}") from exc
+
+
+def save_custom_skill_md(
+    root_path: Path,
+    instance_name: str,
+    skill_name: str,
+    content: str,
+) -> dict:
+    """原子保存自定义技能的 SKILL.md。"""
+    target = _custom_skill_path(root_path, instance_name, skill_name)
+    encoded = content.encode("utf-8")
+    if not encoded:
+        raise ValidationError("SKILL.md 不能为空")
+    if len(encoded) > MAX_SKILL_MD_BYTES:
+        raise ValidationError("SKILL.md 不能超过 1 MB")
+    _name_from_skill_md(content)
+
+    skill_md = target / "SKILL.md"
+    staged = target / f".SKILL.md.{uuid.uuid4().hex}.tmp"
+    try:
+        staged.write_bytes(encoded)
+        staged.chmod(skill_md.stat().st_mode)
+        os.replace(staged, skill_md)
+    except OSError as exc:
+        try:
+            staged.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise FileOperationError(f"保存技能 {skill_name} 失败：{exc}") from exc
+    return _skill_info(target)
+
+
+def export_custom_skill(
+    root_path: Path,
+    instance_name: str,
+    skill_name: str,
+) -> bytes:
+    """将完整技能目录导出为带顶层目录的 ZIP。"""
+    target = _custom_skill_path(root_path, instance_name, skill_name)
+    files = _validate_skill_tree(target)
+    output = io.BytesIO()
+    try:
+        with zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive:
+            for child in files:
+                relative = child.relative_to(target)
+                archive.write(child, PurePosixPath(skill_name, *relative.parts).as_posix())
+    except OSError as exc:
+        raise FileOperationError(f"导出技能 {skill_name} 失败：{exc}") from exc
+    return output.getvalue()
+
+
+def migrate_custom_skill(
+    root_path: Path,
+    source_instance: str,
+    skill_name: str,
+    target_instances: list[str],
+    *,
+    overwrite: bool = False,
+) -> list[str]:
+    """将一个完整技能事务式复制到多个实例。"""
+    source_instance = validate_name(source_instance)
+    source = _custom_skill_path(root_path, source_instance, skill_name)
+    _validate_skill_tree(source)
+
+    unique_targets: list[str] = []
+    seen: set[str] = set()
+    for raw_target_instance in target_instances:
+        target_instance = validate_name(raw_target_instance)
+        if target_instance == source_instance:
+            raise ValidationError("迁移目标不能包含源实例")
+        if target_instance not in seen:
+            seen.add(target_instance)
+            unique_targets.append(target_instance)
+    if not unique_targets:
+        raise ValidationError("请至少选择一个目标实例")
+    if len(unique_targets) > 100:
+        raise ValidationError("单次最多迁移到 100 个实例")
+
+    destinations: list[tuple[str, Path, Path]] = []
+    conflicts: list[str] = []
+    for target_instance in unique_targets:
+        skills_root = _skills_root(root_path, target_instance)
+        destination = skills_root / skill_name
+        if destination.exists():
+            if not overwrite:
+                conflicts.append(target_instance)
+            elif destination.is_symlink() or not destination.is_dir():
+                raise FileOperationError(
+                    f"实例 {target_instance} 的技能目录 {skill_name} 状态异常，无法覆盖"
+                )
+        destinations.append((target_instance, skills_root, destination))
+    if conflicts:
+        raise ConflictError(f"以下实例已存在技能 {skill_name}：{', '.join(conflicts)}")
+
+    staged_paths: list[tuple[str, Path, Path, Path]] = []
+    committed: list[tuple[Path, Path | None]] = []
+    try:
+        for target_instance, skills_root, destination in destinations:
+            skills_root.mkdir(parents=True, exist_ok=True)
+            staged = skills_root / f".xpeech-deck-migrate-{uuid.uuid4().hex}"
+            staged_paths.append((target_instance, staged, skills_root, destination))
+            shutil.copytree(source, staged)
+
+        for _, staged, skills_root, destination in staged_paths:
+            backup: Path | None = None
+            if destination.exists():
+                backup = skills_root / f".xpeech-deck-backup-{uuid.uuid4().hex}"
+                destination.rename(backup)
+            try:
+                staged.rename(destination)
+            except Exception:
+                if backup is not None and backup.exists() and not destination.exists():
+                    backup.rename(destination)
+                raise
+            committed.append((destination, backup))
+    except Exception as exc:
+        for destination, backup in reversed(committed):
+            try:
+                if destination.exists():
+                    shutil.rmtree(destination)
+                if backup is not None and backup.exists():
+                    backup.rename(destination)
+            except OSError:
+                pass
+        raise FileOperationError(f"迁移技能 {skill_name} 失败：{exc}") from exc
+    finally:
+        for _, staged, _, _ in staged_paths:
+            if staged.exists():
+                shutil.rmtree(staged, ignore_errors=True)
+
+    for _, backup in committed:
+        if backup is not None:
+            shutil.rmtree(backup, ignore_errors=True)
+    return unique_targets
+
+
 def delete_custom_skill(root_path: Path, instance_name: str, skill_name: str) -> None:
     """删除一个 x-* 自定义技能；仓库内置技能永远不会进入此路径。"""
-    skill_name = _validate_custom_name(skill_name)
-    target = _skills_root(root_path, instance_name) / skill_name
-    if target.is_symlink() or not target.is_dir() or not (target / "SKILL.md").is_file():
-        raise NotFoundError(f"技能 {skill_name} 不存在")
+    target = _custom_skill_path(root_path, instance_name, skill_name)
     try:
         shutil.rmtree(target)
     except OSError as exc:

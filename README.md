@@ -104,11 +104,13 @@ http://localhost:7801/?token=your-token
 
 ### 自定义内置技能
 
-点击实例行内的「技能管理」，可查看、上传、覆盖和删除该实例的自定义内置技能：
+点击实例行内的「技能管理」，可查看、上传、编辑、下载、迁移和删除该实例的自定义内置技能：
 
 - 可直接上传 UTF-8 编码的 `SKILL.md`，平台从 YAML frontmatter 的 `name` 创建技能目录；包含 `scripts/`、`references/`、`assets/` 等资源时可上传 `.zip`，压缩包根目录或唯一的一级目录中必须包含 `SKILL.md`；
 - 上传后技能目录会自动添加 `x-` 前缀（已有前缀不会重复添加），并安装到实例的 `xpeech/agent/skills/buildin/` 目录；
 - 同名技能不会直接覆盖，确认后才会以新版本替换；单个压缩包最大 20 MB，解压后最大 100 MB、最多 2000 个文件；
+- 可在线编辑并原子保存 `SKILL.md`（最大 1 MB），保存前校验 YAML frontmatter 中是否包含 `name`；
+- 可将包含 `scripts/`、`references/`、`assets/` 的完整技能下载为 ZIP，或一次迁移到多个目标实例；迁移遇到同名技能时先统一确认，再执行覆盖；
 - 页面只列出和删除 `x-*` 自定义技能，仓库自带技能不属于可管理范围；这些目录由 Xpeech 的 `.gitignore` 忽略，因此 fetch 或版本切换不会把它们纳入仓库文件。
 
 ### Compose 操作

@@ -240,6 +240,7 @@ export default function App() {
       <SkillManagementModal
         open={skillsName !== null}
         instanceName={skillsName ?? ''}
+        instanceNames={instances.map((instance) => instance.name)}
         onClose={() => setSkillsName(null)}
       />
       <PullImagesModal

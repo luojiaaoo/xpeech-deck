@@ -48,6 +48,21 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T
 }
 
+async function requestBlob(url: string): Promise<Blob> {
+  const res = await fetch(url, { headers: headers() })
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      const body = await res.json()
+      if (body && body.detail) detail = String(body.detail)
+    } catch {
+      // 非 JSON 响应，保留状态文本
+    }
+    throw new ApiError(res.status, detail)
+  }
+  return res.blob()
+}
+
 export function checkAuth(): Promise<{ authenticated: boolean }> {
   return request('/api/auth/check')
 }
@@ -109,6 +124,52 @@ export function uploadSkill(name: string, file: File, overwrite = false): Promis
     headers: { 'Content-Type': 'application/zip' },
     body: file,
   })
+}
+
+export function getSkillContent(
+  name: string,
+  skillName: string,
+): Promise<{ content: string }> {
+  return request(
+    `/api/instances/${encodeURIComponent(name)}/skills/${encodeURIComponent(skillName)}/content`,
+  )
+}
+
+export function saveSkillContent(
+  name: string,
+  skillName: string,
+  content: string,
+): Promise<Skill> {
+  return request(
+    `/api/instances/${encodeURIComponent(name)}/skills/${encodeURIComponent(skillName)}/content`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    },
+  )
+}
+
+export function downloadSkill(name: string, skillName: string): Promise<Blob> {
+  return requestBlob(
+    `/api/instances/${encodeURIComponent(name)}/skills/${encodeURIComponent(skillName)}/download`,
+  )
+}
+
+export function migrateSkill(
+  name: string,
+  skillName: string,
+  targetInstances: string[],
+  overwrite = false,
+): Promise<{ migrated: string[] }> {
+  return request(
+    `/api/instances/${encodeURIComponent(name)}/skills/${encodeURIComponent(skillName)}/migrate`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ target_instances: targetInstances, overwrite }),
+    },
+  )
 }
 
 export function deleteSkill(name: string, skillName: string): Promise<{ success: boolean }> {
