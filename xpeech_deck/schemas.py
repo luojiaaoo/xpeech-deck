@@ -90,6 +90,17 @@ class SuccessOut(BaseModel):
     success: bool
 
 
+class SkillOut(BaseModel):
+    name: str
+    description: str
+    file_count: int
+    size_bytes: int
+
+
+class SkillListOut(BaseModel):
+    skills: list[SkillOut]
+
+
 class ImageStatusOut(BaseModel):
     key: str
     label: str

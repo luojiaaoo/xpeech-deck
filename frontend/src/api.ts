@@ -7,6 +7,7 @@ import type {
   Instance,
   InstanceConfig,
   InstanceVersions,
+  Skill,
   SwitchVersionResult,
 } from './types'
 
@@ -92,6 +93,29 @@ export function saveConfig(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
+}
+
+export function listSkills(name: string): Promise<{ skills: Skill[] }> {
+  return request(`/api/instances/${encodeURIComponent(name)}/skills`)
+}
+
+export function uploadSkill(name: string, file: File, overwrite = false): Promise<Skill> {
+  const query = new URLSearchParams({
+    filename: file.name,
+    overwrite: String(overwrite),
+  })
+  return request(`/api/instances/${encodeURIComponent(name)}/skills?${query}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/zip' },
+    body: file,
+  })
+}
+
+export function deleteSkill(name: string, skillName: string): Promise<{ success: boolean }> {
+  return request(
+    `/api/instances/${encodeURIComponent(name)}/skills/${encodeURIComponent(skillName)}`,
+    { method: 'DELETE' },
+  )
 }
 
 export function compose(name: string, action: string): Promise<ComposeResult> {

@@ -6,6 +6,7 @@ import CreateInstanceModal from './CreateInstanceModal'
 import ConfigInstanceModal from './ConfigInstanceModal'
 import CommandResultModal from './CommandResultModal'
 import PullImagesModal from './PullImagesModal'
+import SkillManagementModal from './SkillManagementModal'
 import SystemConsoleModal from './SystemConsoleModal'
 import VersionInstanceModal from './VersionInstanceModal'
 import * as api from './api'
@@ -29,6 +30,7 @@ export default function App() {
   const [result, setResult] = useState<ComposeResult | null>(null)
   const [resultOpen, setResultOpen] = useState(false)
   const [imagesOpen, setImagesOpen] = useState(false)
+  const [skillsName, setSkillsName] = useState<string | null>(null)
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [versionName, setVersionName] = useState<string | null>(null)
   const [imageBusy, setImageBusy] = useState(false)
@@ -212,6 +214,7 @@ export default function App() {
           busy={busy}
           commandBusy={commandBusy}
           onConfig={(name) => setConfigName(name)}
+          onSkills={(name) => setSkillsName(name)}
           onVersion={(name) => setVersionName(name)}
           onCommand={handleCommand}
         />
@@ -234,6 +237,11 @@ export default function App() {
         onSwitched={() => setVersionName(null)}
       />
       <CommandResultModal open={resultOpen} result={result} onClose={() => setResultOpen(false)} />
+      <SkillManagementModal
+        open={skillsName !== null}
+        instanceName={skillsName ?? ''}
+        onClose={() => setSkillsName(null)}
+      />
       <PullImagesModal
         open={imagesOpen}
         blocked={busy !== null}

@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Button, Space, Table, Tooltip } from 'antd'
 import type { TableProps } from 'antd'
 import {
+  AppstoreOutlined,
   CaretRightOutlined,
   BranchesOutlined,
   CloudDownloadOutlined,
@@ -37,6 +38,7 @@ interface Props {
   busy: { name: string; action: Action } | null
   commandBusy: boolean
   onConfig: (name: string) => void
+  onSkills: (name: string) => void
   onVersion: (name: string) => void
   onCommand: (instance: Instance, action: Action) => void
 }
@@ -47,13 +49,31 @@ export default function InstanceTable({
   busy,
   commandBusy,
   onConfig,
+  onSkills,
   onVersion,
   onCommand,
 }: Props) {
   const columns: TableProps<Instance>['columns'] = [
-    { title: '实例名', dataIndex: 'name', key: 'name' },
-    { title: 'Backend 端口', dataIndex: 'backend_port', key: 'backend_port', width: 130 },
-    { title: 'Web 端口', dataIndex: 'web_client_port', key: 'web_client_port', width: 110 },
+    {
+      title: '实例名',
+      dataIndex: 'name',
+      key: 'name',
+      sorter: (left, right) => left.name.localeCompare(right.name, undefined, { numeric: true }),
+    },
+    {
+      title: 'Backend 端口',
+      dataIndex: 'backend_port',
+      key: 'backend_port',
+      width: 130,
+      sorter: (left, right) => left.backend_port - right.backend_port,
+    },
+    {
+      title: 'Web 端口',
+      dataIndex: 'web_client_port',
+      key: 'web_client_port',
+      width: 110,
+      sorter: (left, right) => left.web_client_port - right.web_client_port,
+    },
     {
       title: '版本',
       key: 'version',
@@ -61,6 +81,20 @@ export default function InstanceTable({
       render: (_, record) => (
         <Button icon={<BranchesOutlined />} disabled={commandBusy} onClick={() => onVersion(record.name)}>
           切换
+        </Button>
+      ),
+    },
+    {
+      title: '技能',
+      key: 'skills',
+      width: 120,
+      render: (_, record) => (
+        <Button
+          icon={<AppstoreOutlined />}
+          disabled={commandBusy}
+          onClick={() => onSkills(record.name)}
+        >
+          技能管理
         </Button>
       ),
     },

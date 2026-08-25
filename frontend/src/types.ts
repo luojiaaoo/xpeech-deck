@@ -12,6 +12,13 @@ export interface InstanceConfig {
   conf_toml: string
 }
 
+export interface Skill {
+  name: string
+  description: string
+  file_count: number
+  size_bytes: number
+}
+
 export interface ComposeResult {
   success: boolean
   exit_code: number

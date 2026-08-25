@@ -102,6 +102,15 @@ http://localhost:7801/?token=your-token
 - `conf.toml` 在线编辑，保存前用 `tomllib` 校验语法，语法错误不覆盖原文件并返回错误行号；
 - 不校验 API Key、飞书配置等字段内容，这些问题最终由 Compose 命令输出反馈。
 
+### 自定义内置技能
+
+点击实例行内的「技能管理」，可查看、上传、覆盖和删除该实例的自定义内置技能：
+
+- 可直接上传 UTF-8 编码的 `SKILL.md`，平台从 YAML frontmatter 的 `name` 创建技能目录；包含 `scripts/`、`references/`、`assets/` 等资源时可上传 `.zip`，压缩包根目录或唯一的一级目录中必须包含 `SKILL.md`；
+- 上传后技能目录会自动添加 `x-` 前缀（已有前缀不会重复添加），并安装到实例的 `xpeech/agent/skills/buildin/` 目录；
+- 同名技能不会直接覆盖，确认后才会以新版本替换；单个压缩包最大 20 MB，解压后最大 100 MB、最多 2000 个文件；
+- 页面只列出和删除 `x-*` 自定义技能，仓库自带技能不属于可管理范围；这些目录由 Xpeech 的 `.gitignore` 忽略，因此 fetch 或版本切换不会把它们纳入仓库文件。
+
 ### Compose 操作
 
 | 按钮 | 命令 | 超时 |
@@ -172,6 +181,7 @@ xpeech-deck/
 │   ├── git_service.py          # Git 克隆/fetch/版本切换
 │   ├── compose_service.py      # Compose 执行器（超时+互斥）
 │   ├── image_service.py        # 镜像检查与拉取
+│   ├── skill_service.py        # 自定义内置技能安全安装与管理
 │   ├── console_service.py      # 系统控制台事件缓存与广播
 │   ├── schemas.py              # Pydantic 模型
 │   └── static/                 # 前端构建产物
@@ -184,6 +194,7 @@ xpeech-deck/
 │       ├── CreateInstanceModal.tsx
 │       ├── ConfigInstanceModal.tsx
 │       ├── CommandResultModal.tsx
+│       ├── SkillManagementModal.tsx
 │       └── VersionInstanceModal.tsx
 ├── tests/                      # pytest 测试
 ├── conf.toml.example

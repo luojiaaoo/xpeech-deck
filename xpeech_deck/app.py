@@ -14,7 +14,7 @@ from .compose_service import ComposeService
 from .console_service import ConsoleBroker
 from .command_gate import CommandGate
 from .config import Settings
-from .errors import DeckError
+from .errors import DeckError, ValidationError
 from .git_service import GitService
 from .image_service import ImageService
 from .instance_service import (
@@ -23,6 +23,12 @@ from .instance_service import (
     list_instances,
     read_instance_config,
     save_instance_config,
+)
+from .skill_service import (
+    MAX_ARCHIVE_BYTES,
+    delete_custom_skill,
+    install_custom_skill,
+    list_custom_skills,
 )
 from .schemas import (
     AuthCheckOut,
@@ -38,6 +44,8 @@ from .schemas import (
     GitFetchResultOut,
     InstanceVersionsOut,
     SaveConfigIn,
+    SkillListOut,
+    SkillOut,
     SuccessOut,
     SwitchVersionIn,
     SwitchVersionOut,
@@ -196,6 +204,59 @@ def create_app(settings: Settings) -> FastAPI:
             body.web_client_port,
             body.conf_toml,
         )
+        return SuccessOut(success=True)
+
+    # ---------- 自定义内置技能 ----------
+
+    @app.get(
+        "/api/instances/{name}/skills",
+        dependencies=[Depends(require_token)],
+        response_model=SkillListOut,
+    )
+    async def get_skills(name: str):
+        skills = list_custom_skills(settings.root_path, name)
+        return SkillListOut(skills=[SkillOut(**skill) for skill in skills])
+
+    @app.post(
+        "/api/instances/{name}/skills",
+        dependencies=[Depends(require_token)],
+        response_model=SkillOut,
+        status_code=201,
+    )
+    async def post_skill(
+        name: str,
+        request: Request,
+        filename: str,
+        overwrite: bool = False,
+    ):
+        content_length = request.headers.get("content-length")
+        if (
+            content_length
+            and content_length.isdigit()
+            and int(content_length) > MAX_ARCHIVE_BYTES
+        ):
+            raise ValidationError("上传文件不能超过 20 MB")
+        content = bytearray()
+        async for chunk in request.stream():
+            content.extend(chunk)
+            if len(content) > MAX_ARCHIVE_BYTES:
+                raise ValidationError("上传文件不能超过 20 MB")
+        skill = install_custom_skill(
+            settings.root_path,
+            name,
+            filename,
+            bytes(content),
+            overwrite=overwrite,
+        )
+        return SkillOut(**skill)
+
+    @app.delete(
+        "/api/instances/{name}/skills/{skill_name}",
+        dependencies=[Depends(require_token)],
+        response_model=SuccessOut,
+    )
+    async def delete_skill(name: str, skill_name: str):
+        delete_custom_skill(settings.root_path, name, skill_name)
         return SuccessOut(success=True)
 
     # ---------- Compose 操作 ----------
