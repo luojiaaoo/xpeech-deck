@@ -58,6 +58,21 @@ async def test_console_replays_history_then_streams_new_events():
     await subscription.aclose()
 
 
+async def test_console_replays_only_latest_200_events():
+    console = ConsoleBroker()
+    for number in range(205):
+        await console.publish("stdout", f"line {number}\n", source="compose")
+
+    subscription = console.subscribe()
+    history = [await anext(subscription) for _ in range(200)]
+
+    assert history[0] is not None
+    assert history[0]["text"] == "line 5\n"
+    assert history[-1] is not None
+    assert history[-1]["text"] == "line 204\n"
+    await subscription.aclose()
+
+
 async def test_file_backed_console_persists_across_process_restart(tmp_path):
     log_path = tmp_path / "logs" / "console.jsonl"
     first_process = ConsoleBroker(log_path=log_path)

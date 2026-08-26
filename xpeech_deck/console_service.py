@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 ConsoleKind = Literal["command", "stdout", "stderr", "exit", "system"]
+CONSOLE_HISTORY_LIMIT = 200
 
 
 class ConsoleBroker:
@@ -108,9 +109,10 @@ class ConsoleBroker:
             cwd=cwd,
         )
 
-    def snapshot(self) -> list[dict[str, Any]]:
+    def snapshot(self, limit: int | None = None) -> list[dict[str, Any]]:
         if self._log_path is None:
-            return list(self._events)
+            events = list(self._events)
+            return events[-limit:] if limit is not None else events
 
         events: list[dict[str, Any]] = []
         if self._log_path.is_file():
@@ -124,12 +126,12 @@ class ConsoleBroker:
                 pass
         events.extend(self._events)
         events.sort(key=lambda event: event["sequence"])
-        return events
+        return events[-limit:] if limit is not None else events
 
     async def subscribe(self) -> AsyncIterator[dict[str, Any] | None]:
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
         # 只在前端打开 Console 建立订阅时从文件读取历史。
-        history = self.snapshot()
+        history = self.snapshot(limit=CONSOLE_HISTORY_LIMIT)
         self._subscribers.add(queue)
         try:
             for event in history:

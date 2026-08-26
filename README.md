@@ -142,7 +142,7 @@ http://localhost:7801/?token=your-token
 
 ### System Console
  
-点击顶部「Console」打开系统控制台。Git、Compose 以及镜像操作产生的命令、stdout、stderr 和退出码会按 JSONL 格式逐条追加到日志文件；只有打开 Console 时才会读取历史，然后继续展示实时输出。默认路径是 `<root_path>/.xpeech-deck/console.jsonl`，也可在 `conf.toml` 中使用 `console_log_path` 指定绝对或项目相对路径。后端重启不会清空文件；「清空显示」只清空当前前端内容。
+点击顶部「Console」打开系统控制台。Git、Compose 以及镜像操作产生的命令、stdout、stderr 和退出码会按 JSONL 格式逐条追加到日志文件；打开 Console 时会读取最近 200 条历史，并在继续展示实时输出时始终只保留最近 200 条。默认路径是 `<root_path>/.xpeech-deck/console.jsonl`，也可在 `conf.toml` 中使用 `console_log_path` 指定绝对或项目相对路径。后端重启不会清空文件；「清空显示」只清空当前前端内容。
 
 更新到带 Console 的版本后必须重启 Xpeech Deck 后端进程，使 `/api/console/stream` 路由完成注册；仅重新构建前端会出现“Console 接口尚未加载”的提示。
 

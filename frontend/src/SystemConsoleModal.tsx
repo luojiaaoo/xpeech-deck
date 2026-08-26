@@ -9,6 +9,8 @@ interface Props {
   onClose: () => void
 }
 
+const MAX_CONSOLE_EVENTS = 200
+
 function timeOf(timestamp: string): string {
   return new Date(timestamp).toLocaleTimeString([], { hour12: false })
 }
@@ -27,7 +29,7 @@ export default function SystemConsoleModal({ open, onClose }: Props) {
     setError('')
     void api.streamConsole(
       controller.signal,
-      (event) => setEvents((current) => [...current, event]),
+      (event) => setEvents((current) => [...current, event].slice(-MAX_CONSOLE_EVENTS)),
       () => setConnected(true),
     ).catch((reason: unknown) => {
       if (controller.signal.aborted) return
@@ -74,7 +76,7 @@ export default function SystemConsoleModal({ open, onClose }: Props) {
         {error ? <div className="console-line console-stderr">连接失败：{error}</div> : null}
       </div>
       <Typography.Text type="secondary">
-        历史从服务端 JSONL 日志文件读取，并继续显示 Git / Docker 实时输出；
+        仅显示最近 {MAX_CONSOLE_EVENTS} 条日志，并继续显示 Git / Docker 实时输出；
         「清空显示」不会删除日志文件。
       </Typography.Text>
     </Modal>
