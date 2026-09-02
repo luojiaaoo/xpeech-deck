@@ -136,7 +136,8 @@ http://localhost:7801/?token=your-token
 点击顶部「拉取镜像」可检查并分别拉取：
 
 - `docker.1panel.live/library/ubuntu:22.04`：Xpeech Dockerfile 使用的基础镜像；
-- `ghcr.io/browserless/chromium:v2.55.0`：Xpeech Compose 使用的 Browserless 镜像。
+- `ghcr.io/browserless/chromium:v2.55.0`：Xpeech Compose 使用的 Browserless 镜像；
+- `docker.1ms.run/library/golang:1.23-bookworm`：Go 1.23 Bookworm 镜像。
 
 弹窗展示镜像是否已存在，并在存在时显示镜像 ID、大小和创建时间。每个镜像可单独拉取，拉取完成后自动刷新对应状态。
 

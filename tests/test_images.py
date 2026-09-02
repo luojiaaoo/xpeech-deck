@@ -44,9 +44,12 @@ async def test_list_image_statuses_available_and_missing():
     assert images[0]["image_id"] == "abc123def456"
     assert images[0]["size_bytes"] == 123456
     assert images[1]["status"] == "missing"
+    assert images[2]["status"] == "missing"
+    assert images[2]["name"] == "docker.1ms.run/library/golang:1.23-bookworm"
     assert commands == [
         ["docker", "image", "inspect", IMAGE_SPECS[0].name],
         ["docker", "image", "inspect", IMAGE_SPECS[1].name],
+        ["docker", "image", "inspect", IMAGE_SPECS[2].name],
     ]
 
 
@@ -108,7 +111,7 @@ def test_images_api(client, auth_headers):
 
     assert response.status_code == 200
     images = response.json()["images"]
-    assert [image["key"] for image in images] == ["xpeech-base", "browserless"]
+    assert [image["key"] for image in images] == ["xpeech-base", "browserless", "golang"]
     assert all(image["status"] == "available" for image in images)
 
 

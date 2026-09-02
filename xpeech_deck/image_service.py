@@ -20,7 +20,7 @@ class ImageSpec:
     name: str
 
 
-# Xpeech 当前模板直接依赖的两个远程镜像。
+# Xpeech 当前模板使用的远程镜像。
 IMAGE_SPECS: tuple[ImageSpec, ...] = (
     ImageSpec(
         key="xpeech-base",
@@ -31,6 +31,11 @@ IMAGE_SPECS: tuple[ImageSpec, ...] = (
         key="browserless",
         label="Browserless 镜像",
         name="ghcr.io/browserless/chromium:v2.55.0",
+    ),
+    ImageSpec(
+        key="golang",
+        label="Golang 镜像",
+        name="docker.1ms.run/library/golang:1.23-bookworm",
     ),
 )
 
