@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import Awaitable, Callable
 
-from .errors import CommandTimeoutError, ConflictError
+from .errors import CommandTimeoutError, ConflictError, ValidationError
 from .console_service import ConsoleBroker, communicate_with_console
 from .command_gate import CommandGate
 
@@ -19,6 +20,10 @@ ACTIONS: dict[str, list[str]] = {
     "ps": ["docker", "compose", "ps"],
 }
 
+SERVICES_COMMAND = ["docker", "compose", "config", "--services"]
+LOG_TAIL_LINES = 500
+SERVICE_NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
 # 各操作的超时时间（秒）
 DEFAULT_TIMEOUTS: dict[str, int] = {
     "up": 1800,  # 30 分钟：构建镜像耗时较长
@@ -27,6 +32,8 @@ DEFAULT_TIMEOUTS: dict[str, int] = {
     "restart": 300,
     "down": 300,
     "ps": 30,
+    "services": 30,
+    "logs": 30,
 }
 
 
@@ -58,6 +65,34 @@ class ComposeService:
             raise ConflictError(f"不支持的操作：{action}")
         async with self._gate.hold(f"实例 {name}：docker compose {action}"):
             return await self._execute(ACTIONS[action], path, self._timeouts[action])
+
+    async def list_services(self, name: str, path: str) -> dict:
+        async with self._gate.hold(f"实例 {name}：读取 Compose 服务列表"):
+            result = await self._execute(
+                SERVICES_COMMAND,
+                path,
+                self._timeouts["services"],
+            )
+        services = (
+            [line.strip() for line in result["stdout"].splitlines() if line.strip()]
+            if result["success"]
+            else []
+        )
+        return {**result, "services": services}
+
+    async def logs(self, name: str, path: str, service: str) -> dict:
+        if not SERVICE_NAME_PATTERN.fullmatch(service):
+            raise ValidationError("非法的 Compose 服务名")
+        cmd = [
+            "docker",
+            "compose",
+            "logs",
+            "-n",
+            str(LOG_TAIL_LINES),
+            service,
+        ]
+        async with self._gate.hold(f"实例 {name}：查看 {service} 日志"):
+            return await self._execute(cmd, path, self._timeouts["logs"])
 
     async def _execute(self, cmd: list[str], cwd: str, timeout: int) -> dict:
         if self._console is not None:

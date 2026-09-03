@@ -5,7 +5,7 @@ Xpeech 简易多实例管理平台：在指定目录中克隆并管理多个 [Xp
 - 每个实例直接从 Gitee 克隆一份独立 Xpeech Git 工作树
 - 自动 fetch 全部实例，可在远程分支与标签之间切换版本
 - 在线配置 Backend / Web Client 端口与 `conf.toml`
-- 执行常用 Docker Compose 命令（Up / Start / Stop / Restart / Down / PS）
+- 执行常用 Docker Compose 命令（Up / Start / Stop / Restart / Down / PS / Logs）
 - 查看并拉取 Xpeech 构建基础镜像与 Browserless 镜像
 - 通过 System Console 实时查看平台执行的 Docker 命令与响应
 - 通过 URL Token 直接进入，无账号和登录页面
@@ -123,12 +123,14 @@ http://localhost:7801/?token=your-token
 | Restart | `docker compose restart` | 5 分钟 |
 | Down | `docker compose down` | 5 分钟 |
 | PS | `docker compose ps` | 30 秒 |
+| 日志 | `docker compose logs -n 500 <服务名>` | 30 秒 |
 
 - 命令在实例目录中执行，参数以列表传递（禁止 Shell 拼接）；
 - 整个平台同一时间只允许运行一个受管命令；不同实例以及 Git、Compose、镜像操作之间也互斥，重复请求立即返回 409，不排队；
 - 超时后终止命令并返回「命令执行超时」；
 - 结束后弹窗展示退出码、stdout、stderr，成功/失败分别以绿色/红色提示，内容支持复制；
 - `Down` 有确认提示，只下线容器，不删除实例目录和数据；
+- 点击「日志」后先列出 Compose 中的子服务；选择服务后按需读取该服务最近 500 行，不实时跟踪或自动刷新；
 - 不保存任何执行历史，不自动刷新状态。
 
 ### 拉取镜像

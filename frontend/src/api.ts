@@ -1,5 +1,6 @@
 import type {
   ComposeResult,
+  ComposeServicesResult,
   ConsoleEvent,
   GitFetchResult,
   ImagePullResult,
@@ -183,6 +184,16 @@ export function compose(name: string, action: string): Promise<ComposeResult> {
   return request(`/api/instances/${encodeURIComponent(name)}/compose/${action}`, {
     method: action === 'ps' ? 'GET' : 'POST',
   })
+}
+
+export function listComposeServices(name: string): Promise<ComposeServicesResult> {
+  return request(`/api/instances/${encodeURIComponent(name)}/compose/services`)
+}
+
+export function composeLogs(name: string, service: string): Promise<ComposeResult> {
+  return request(
+    `/api/instances/${encodeURIComponent(name)}/compose/logs/${encodeURIComponent(service)}`,
+  )
 }
 
 export function listImages(): Promise<{ images: ImageStatus[] }> {

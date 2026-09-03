@@ -6,6 +6,7 @@ import {
   CaretRightOutlined,
   BranchesOutlined,
   CloudDownloadOutlined,
+  FileTextOutlined,
   PauseOutlined,
   PoweroffOutlined,
   ReloadOutlined,
@@ -14,7 +15,7 @@ import {
 } from '@ant-design/icons'
 import type { Instance } from './types'
 
-export type Action = 'up' | 'start' | 'stop' | 'restart' | 'down' | 'ps'
+export type Action = 'up' | 'start' | 'stop' | 'restart' | 'down' | 'ps' | 'logs'
 
 interface ActionDef {
   key: Action
@@ -30,6 +31,7 @@ const ACTIONS: ActionDef[] = [
   { key: 'restart', label: 'Restart', icon: <ReloadOutlined /> },
   { key: 'down', label: 'Down', icon: <PoweroffOutlined />, danger: true },
   { key: 'ps', label: 'PS', icon: <TableOutlined /> },
+  { key: 'logs', label: '日志', icon: <FileTextOutlined /> },
 ]
 
 interface Props {
@@ -116,7 +118,10 @@ export default function InstanceTable({
         return (
           <Space wrap>
             {ACTIONS.map((a) => (
-              <Tooltip key={a.key} title={`docker compose ${a.key}`}>
+              <Tooltip
+                key={a.key}
+                title={a.key === 'logs' ? '选择子服务并查看最近 500 行日志' : `docker compose ${a.key}`}
+              >
                 <Button
                   danger={a.danger}
                   icon={a.icon}

@@ -5,6 +5,7 @@ import InstanceTable, { type Action } from './InstanceTable'
 import CreateInstanceModal from './CreateInstanceModal'
 import ConfigInstanceModal from './ConfigInstanceModal'
 import CommandResultModal from './CommandResultModal'
+import DockerLogsModal from './DockerLogsModal'
 import PullImagesModal from './PullImagesModal'
 import SkillManagementModal from './SkillManagementModal'
 import SystemConsoleModal from './SystemConsoleModal'
@@ -34,7 +35,9 @@ export default function App() {
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [versionName, setVersionName] = useState<string | null>(null)
   const [imageBusy, setImageBusy] = useState(false)
-  const commandBusy = busy !== null || imageBusy
+  const [logsName, setLogsName] = useState<string | null>(null)
+  const [logsBusy, setLogsBusy] = useState(false)
+  const commandBusy = busy !== null || imageBusy || logsBusy
 
   // 从 URL 查询参数读取 Token，只保存在内存中，并清除地址栏
   useEffect(() => {
@@ -142,6 +145,14 @@ export default function App() {
   }
 
   const handleCommand = (instance: Instance, action: Action) => {
+    if (action === 'logs') {
+      if (commandBusy) {
+        message.warning('当前有命令正在执行，请稍后重试')
+        return
+      }
+      setLogsName(instance.name)
+      return
+    }
     if (action === 'down') {
       Modal.confirm({
         title: '确定要执行 docker compose down 吗？',
@@ -245,9 +256,16 @@ export default function App() {
       />
       <PullImagesModal
         open={imagesOpen}
-        blocked={busy !== null}
+        blocked={busy !== null || logsBusy}
         onBusyChange={setImageBusy}
         onClose={() => setImagesOpen(false)}
+      />
+      <DockerLogsModal
+        open={logsName !== null}
+        instanceName={logsName ?? ''}
+        blocked={busy !== null || imageBusy}
+        onBusyChange={setLogsBusy}
+        onClose={() => setLogsName(null)}
       />
       <SystemConsoleModal open={consoleOpen} onClose={() => setConsoleOpen(false)} />
     </Layout>

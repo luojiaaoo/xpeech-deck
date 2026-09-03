@@ -7,7 +7,7 @@ import asyncio
 import pytest
 
 from xpeech_deck.compose_service import ACTIONS, ComposeService
-from xpeech_deck.errors import CommandTimeoutError, ConflictError
+from xpeech_deck.errors import CommandTimeoutError, ConflictError, ValidationError
 
 
 class FakeProcess:
@@ -162,6 +162,51 @@ async def test_unknown_action_rejected():
         await svc.run("demo01", "/instances/demo01", "destroy")
 
 
+async def test_list_services_uses_compose_config_output():
+    captured: dict = {}
+
+    async def runner(cmd, cwd):
+        captured["cmd"] = cmd
+        captured["cwd"] = cwd
+        return FakeProcess(stdout=b"backend\nbrowserless\nweb-client\n")
+
+    result = await ComposeService(runner=runner).list_services(
+        "demo01", "/instances/demo01"
+    )
+
+    assert result["success"] is True
+    assert result["services"] == ["backend", "browserless", "web-client"]
+    assert captured["cmd"] == ["docker", "compose", "config", "--services"]
+    assert captured["cwd"] == "/instances/demo01"
+
+
+async def test_logs_are_limited_to_selected_service():
+    captured: dict = {}
+
+    async def runner(cmd, cwd):
+        captured["cmd"] = cmd
+        return FakeProcess(stdout=b"backend-1 | ready\n")
+
+    result = await ComposeService(runner=runner).logs(
+        "demo01", "/instances/demo01", "backend"
+    )
+
+    assert result["stdout"] == "backend-1 | ready\n"
+    assert captured["cmd"] == [
+        "docker",
+        "compose",
+        "logs",
+        "-n",
+        "500",
+        "backend",
+    ]
+
+
+async def test_logs_reject_invalid_service_name():
+    with pytest.raises(ValidationError):
+        await ComposeService().logs("demo01", "/instances/demo01", "--follow")
+
+
 def test_actions_timeout_table():
     """超时表与计划书一致。"""
     from xpeech_deck.compose_service import DEFAULT_TIMEOUTS
@@ -173,8 +218,10 @@ def test_actions_timeout_table():
         "restart": 300,
         "down": 300,
         "ps": 30,
+        "services": 30,
+        "logs": 30,
     }
-    assert set(ACTIONS) == set(DEFAULT_TIMEOUTS)
+    assert set(DEFAULT_TIMEOUTS) == {*ACTIONS, "services", "logs"}
 
 
 # ---------- API 层测试（用假 runner 替换 app.state.compose） ----------
@@ -214,6 +261,45 @@ def test_compose_endpoint_ps(client, auth_headers, make_instance):
     r = client.get("/api/instances/demo01/compose/ps", headers=auth_headers)
     assert r.status_code == 200
     assert captured["cmd"] == ["docker", "compose", "ps"]
+
+
+def test_compose_services_endpoint(client, auth_headers, make_instance):
+    make_instance("demo01")
+    captured: dict = {}
+
+    async def runner(cmd, cwd):
+        captured["cmd"] = cmd
+        return FakeProcess(stdout=b"backend\nbrowserless\n", returncode=0)
+
+    client.app.state.compose = ComposeService(runner=runner)
+
+    r = client.get("/api/instances/demo01/compose/services", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json()["services"] == ["backend", "browserless"]
+    assert captured["cmd"] == ["docker", "compose", "config", "--services"]
+
+
+def test_compose_endpoint_logs(client, auth_headers, make_instance):
+    make_instance("demo01")
+    captured: dict = {}
+
+    async def runner(cmd, cwd):
+        captured["cmd"] = cmd
+        return FakeProcess(stdout=b"backend-1 | ready\n", returncode=0)
+
+    client.app.state.compose = ComposeService(runner=runner)
+
+    r = client.get("/api/instances/demo01/compose/logs/backend", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json()["stdout"] == "backend-1 | ready\n"
+    assert captured["cmd"] == [
+        "docker",
+        "compose",
+        "logs",
+        "-n",
+        "500",
+        "backend",
+    ]
 
 
 def test_compose_failure_still_returns_result(client, auth_headers, make_instance):

@@ -26,6 +26,10 @@ export interface ComposeResult {
   stderr: string
 }
 
+export interface ComposeServicesResult extends ComposeResult {
+  services: string[]
+}
+
 export interface GitVersion {
   ref: string
   label: string

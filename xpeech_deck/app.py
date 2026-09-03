@@ -39,6 +39,7 @@ from .skill_service import (
 from .schemas import (
     AuthCheckOut,
     ComposeResultOut,
+    ComposeServicesOut,
     CreateInstanceIn,
     InstanceConfigOut,
     InstanceListOut,
@@ -338,6 +339,26 @@ def create_app(settings: Settings) -> FastAPI:
     async def compose_ps(name: str):
         path = _recognize_instance(settings.root_path, name)
         result = await app.state.compose.run(name, str(path), "ps")
+        return ComposeResultOut(**result)
+
+    @app.get(
+        "/api/instances/{name}/compose/services",
+        dependencies=[Depends(require_token)],
+        response_model=ComposeServicesOut,
+    )
+    async def compose_services(name: str):
+        path = _recognize_instance(settings.root_path, name)
+        result = await app.state.compose.list_services(name, str(path))
+        return ComposeServicesOut(**result)
+
+    @app.get(
+        "/api/instances/{name}/compose/logs/{service}",
+        dependencies=[Depends(require_token)],
+        response_model=ComposeResultOut,
+    )
+    async def compose_logs(name: str, service: str):
+        path = _recognize_instance(settings.root_path, name)
+        result = await app.state.compose.logs(name, str(path), service)
         return ComposeResultOut(**result)
 
     # ---------- 前端静态资源（最后挂载，避免覆盖 /api 与 /health） ----------

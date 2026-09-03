@@ -5,6 +5,7 @@ interface Props {
   open: boolean
   result: ComposeResult | null
   onClose: () => void
+  title?: string
 }
 
 function copy(text: string): void {
@@ -34,10 +35,10 @@ function OutputBlock({ title, content }: { title: string; content: string }) {
   )
 }
 
-export default function CommandResultModal({ open, result, onClose }: Props) {
+export default function CommandResultModal({ open, result, onClose, title = '命令执行结果' }: Props) {
   return (
     <Modal
-      title="命令执行结果"
+      title={title}
       open={open}
       onCancel={onClose}
       onOk={onClose}

@@ -82,6 +82,10 @@ class ComposeResultOut(BaseModel):
     stderr: str
 
 
+class ComposeServicesOut(ComposeResultOut):
+    services: list[str]
+
+
 class AuthCheckOut(BaseModel):
     authenticated: bool
 
