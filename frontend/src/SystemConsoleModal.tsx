@@ -54,7 +54,7 @@ export default function SystemConsoleModal({ open, onClose }: Props) {
       }
       open={open}
       onCancel={onClose}
-      width={980}
+      width={1280}
       footer={[
         <Button key="clear" icon={<DeleteOutlined />} onClick={() => setEvents([])}>
           清空显示

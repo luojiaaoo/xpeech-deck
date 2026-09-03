@@ -87,7 +87,7 @@ export default function DockerLogsModal({
         title={`Docker 日志：${instanceName}`}
         open={open}
         onCancel={onClose}
-        width={720}
+        width={960}
         footer={[
           <Button
             key="refresh"
@@ -128,6 +128,7 @@ export default function DockerLogsModal({
         open={resultOpen}
         result={result}
         title={`${resultService ?? ''} 日志（最近 500 行）`}
+        width={1280}
         onClose={() => setResultOpen(false)}
       />
     </>

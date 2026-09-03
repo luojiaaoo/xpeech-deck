@@ -6,6 +6,7 @@ interface Props {
   result: ComposeResult | null
   onClose: () => void
   title?: string
+  width?: number | string
 }
 
 function copy(text: string): void {
@@ -35,7 +36,13 @@ function OutputBlock({ title, content }: { title: string; content: string }) {
   )
 }
 
-export default function CommandResultModal({ open, result, onClose, title = '命令执行结果' }: Props) {
+export default function CommandResultModal({
+  open,
+  result,
+  onClose,
+  title = '命令执行结果',
+  width = 720,
+}: Props) {
   return (
     <Modal
       title={title}
@@ -44,7 +51,7 @@ export default function CommandResultModal({ open, result, onClose, title = '命
       onOk={onClose}
       okText="关闭"
       cancelButtonProps={{ style: { display: 'none' } }}
-      width={720}
+      width={width}
     >
       {result && (
         <div>
