@@ -21,6 +21,7 @@ uv sync --frozen
 
 if [[ "${was_running}" == true ]]; then
     "${SCRIPT_DIR}/stop.sh"
+    sleep 5
     "${SCRIPT_DIR}/start.sh"
 fi
 
