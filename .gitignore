@@ -223,3 +223,4 @@ console.jsonl
 conf.toml
 frontend/node_modules/
 frontend/dist/
+deck.log
