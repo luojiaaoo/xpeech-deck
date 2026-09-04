@@ -453,10 +453,7 @@ def create_app(settings: Settings) -> FastAPI:
                 content={"detail": f"映射指向的实例 {instance_name} 不存在"},
             )
 
-        target = (
-            f"{settings.global_host}:{instance['web_client_port']}"
-            "/api/auth/oauth2/callback"
-        )
+        target = f"{settings.global_host}:{instance['web_client_port']}"
         passthrough = [
             (key, value)
             for key, value in request.query_params.multi_items()
