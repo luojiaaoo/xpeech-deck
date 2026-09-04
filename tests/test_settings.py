@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from xpeech_deck.config import Settings, load_settings
+from xpeech_deck.config import (
+    DEFAULT_CONSOLE_LOG_PATH,
+    DEFAULT_DISPLAY_NAME,
+    DEFAULT_GLOBAL_CONFIG_PATH,
+    Settings,
+    load_settings,
+)
 
 
 def write_config(path: Path, extra: str = "") -> Path:
@@ -29,6 +35,66 @@ def test_listen_port_can_be_configured(tmp_path: Path) -> None:
     settings = load_settings(write_config(tmp_path, "listen_port = 9123\n"))
 
     assert settings.listen_port == 9123
+
+
+def test_global_settings_have_project_file_defaults(tmp_path: Path) -> None:
+    settings = load_settings(write_config(tmp_path))
+
+    assert settings.display_name == DEFAULT_DISPLAY_NAME
+    assert settings.global_host is None
+    assert settings.global_config_path == DEFAULT_GLOBAL_CONFIG_PATH
+    assert settings.console_log_path == DEFAULT_CONSOLE_LOG_PATH
+
+
+def test_global_settings_can_be_configured(tmp_path: Path) -> None:
+    settings = load_settings(
+        write_config(
+            tmp_path,
+            'display_name = "My Deck"\n'
+            'global_host = "https://deck.example.com"\n'
+            'global_config_path = "runtime/global.json"\n',
+        )
+    )
+
+    assert settings.display_name == "My Deck"
+    assert settings.global_host == "https://deck.example.com"
+    assert settings.global_config_path == (
+        DEFAULT_GLOBAL_CONFIG_PATH.parent / "runtime" / "global.json"
+    )
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        '"example.com"',
+        '"ftp://example.com"',
+        '"https://example.com:7801"',
+        '"https://example.com/path"',
+        '"https://999.1.1.1"',
+        '"https://user@example.com"',
+        "123",
+    ],
+)
+def test_global_host_rejects_invalid_hosts(tmp_path: Path, value: str) -> None:
+    with pytest.raises(ValueError, match="global_host"):
+        load_settings(write_config(tmp_path, f"global_host = {value}\n"))
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("http://203.0.113.8", "http://203.0.113.8"),
+        ("https://[2001:db8::1]", "https://[2001:db8::1]"),
+        ("https://deck.example.com", "https://deck.example.com"),
+        ("HTTP://deck.example.com/", "http://deck.example.com"),
+    ],
+)
+def test_global_host_accepts_http_and_https_origins(
+    tmp_path: Path, value: str, expected: str
+) -> None:
+    settings = load_settings(write_config(tmp_path, f'global_host = "{value}"\n'))
+
+    assert settings.global_host == expected
 
 
 def test_main_starts_uvicorn_on_configured_port(

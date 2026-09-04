@@ -8,6 +8,8 @@ Xpeech 简易多实例管理平台：在指定目录中克隆并管理多个 [Xp
 - 执行常用 Docker Compose 命令（Up / Start / Stop / Restart / Down / PS / Logs）
 - 查看并拉取 Xpeech 构建基础镜像与 Browserless 镜像
 - 通过 System Console 实时查看平台执行的 Docker 命令与响应
+- 通过 `redirect_to` 映射将 OAuth2 回调转发到指定实例
+- 无 Token 时展示可直接访问的实例入口卡片
 - 通过 URL Token 直接进入，无账号和登录页面
 
 ## 前置依赖
@@ -46,11 +48,16 @@ cd ..
 token = "replace-with-your-token"
 root_path = "/opt/xpeech-instances"      # Windows 示例："E:/xpeech-instances"
 listen_port = 7801                       # 可选，Deck 自身监听端口
+display_name = "Xpeech Deck"             # 可选，页面显示名称
+global_host = "https://deck.example.com"  # 可选，OAuth2 回调使用的全局地址
+global_config_path = "global_config.json" # 可选，redirect_to 映射文件
 ```
+
+`display_name` 与 `global_host` 在后端启动时读取，修改后需要重启；`global_host` 必须以 `http://` 或 `https://` 开头，主机部分接受合法域名、IPv4 或 IPv6，但不能自行包含端口、路径、查询参数或认证信息。重定向协议会直接使用这里配置的协议。`global_config_path` 支持绝对路径或相对于项目根目录的路径，默认为项目根目录下的 `global_config.json`。
 
 启动时平台会：
 
-1. 读取项目根目录的 `conf.toml`，校验 `token` 非空、`listen_port` 为有效端口；
+1. 读取项目根目录的 `conf.toml`，校验 `token` 非空、`listen_port` 为有效端口，并校验可选的 `global_host`；
 2. 将 `root_path` 转为绝对路径，不存在则自动创建；
 3. 检查 `docker` 与 `git` 命令是否可执行（缺失时仅告警，对应操作会失败）。
 
@@ -74,7 +81,36 @@ http://localhost:7801/?token=your-token
 - Token 只保存在页面内存中，打开页面后自动从地址栏清除；
 - 刷新页面后 Token 丢失，需重新使用带 `?token=xxx` 的地址；
 - 不使用 Cookie / localStorage / 登录表单；
-- 公开接口只有 `GET /health`，其余 `/api/*` 必须携带 `Authorization: Bearer <token>`。
+- `GET /health` 与 `GET /api/public/instances` 是公开接口；后者仅返回系统名称、实例名和 Web 端口，其余 `/api/*` 必须携带 `Authorization: Bearer <token>`。
+
+不带 Token 访问根路径时，页面展示系统名称与实例卡片；卡片只包含实例名和 Web 端口，点击后在新标签页打开对应 Web 界面。没有实例时仅显示「暂无实例」。
+
+### OAuth2 回调重定向与全局配置
+
+管理页 Header 的「全局配置」可维护 `redirect_to` 值到实例名的映射。每行选择一个现有实例，保存后原子写入 `global_config.json` 并实时生效，无需重启。该文件也可以手动编辑：
+
+```json
+{
+  "redirect_to": {
+    "desktop": "demo01",
+    "mobile": "demo02"
+  }
+}
+```
+
+访问以下地址且没有 `token` 参数时：
+
+```text
+http://localhost:7801/?redirect_to=desktop&state=xxx&oauth2provider=feishu
+```
+
+Deck 会根据映射找到实例 Web 端口，并重定向到：
+
+```text
+https://deck.example.com:<实例 Web 端口>/api/auth/oauth2/callback?state=xxx&oauth2provider=feishu
+```
+
+`state` 与 `oauth2provider` 会透传。未配置 `global_host` 返回 400，映射未命中或映射指向的实例不存在返回 404，均不会回退到前端页面。只要 URL 带有 `token` 参数，或没有 `redirect_to` 参数，就正常打开前端。
 
 ## 使用
 
@@ -145,7 +181,7 @@ http://localhost:7801/?token=your-token
 
 ### System Console
  
-点击顶部「Console」打开系统控制台。Git、Compose 以及镜像操作产生的命令、stdout、stderr 和退出码会按 JSONL 格式逐条追加到日志文件；打开 Console 时会读取最近 200 条历史，并在继续展示实时输出时始终只保留最近 200 条。默认路径是 `<root_path>/.xpeech-deck/console.jsonl`，也可在 `conf.toml` 中使用 `console_log_path` 指定绝对或项目相对路径。后端重启不会清空文件；「清空显示」只清空当前前端内容。
+点击顶部「Console」打开系统控制台。Git、Compose 以及镜像操作产生的命令、stdout、stderr 和退出码会按 JSONL 格式逐条追加到日志文件；打开 Console 时会读取最近 200 条历史，并在继续展示实时输出时始终只保留最近 200 条。默认路径是项目根目录下的 `console.jsonl`，也可在 `conf.toml` 中使用 `console_log_path` 指定绝对或项目相对路径。后端重启不会清空文件；「清空显示」只清空当前前端内容。
 
 更新到带 Console 的版本后必须重启 Xpeech Deck 后端进程，使 `/api/console/stream` 路由完成注册；仅重新构建前端会出现“Console 接口尚未加载”的提示。
 
@@ -157,7 +193,7 @@ http://localhost:7801/?token=your-token
 uv run pytest
 ```
 
-覆盖：认证、Git 克隆/fetch/版本切换、实例列表、配置编辑（端口/TOML 校验）、Compose 命令参数/超时/互斥、镜像状态检查与拉取、系统控制台缓存与流式输出。
+覆盖：认证、公开实例接口、OAuth2 根路径重定向、全局映射配置、Git 克隆/fetch/版本切换、实例列表、配置编辑（端口/TOML 校验）、Compose 命令参数/超时/互斥、镜像状态检查与拉取、系统控制台缓存与流式输出。
 
 ### 前端开发
 
@@ -181,6 +217,7 @@ xpeech-deck/
 │   ├── __main__.py             # 入口（uvicorn :listen_port）
 │   ├── app.py                  # FastAPI 路由与静态托管
 │   ├── config.py               # conf.toml 读取与启动检查
+│   ├── global_config_service.py # redirect_to 映射实时读写
 │   ├── auth.py                 # URL Token 认证
 │   ├── instance_service.py     # 实例发现/创建/配置
 │   ├── git_service.py          # Git 克隆/fetch/版本切换
@@ -198,6 +235,7 @@ xpeech-deck/
 │       ├── InstanceTable.tsx
 │       ├── CreateInstanceModal.tsx
 │       ├── ConfigInstanceModal.tsx
+│       ├── GlobalConfigModal.tsx
 │       ├── CommandResultModal.tsx
 │       ├── SkillManagementModal.tsx
 │       └── VersionInstanceModal.tsx

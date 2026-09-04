@@ -8,6 +8,8 @@ import type {
   Instance,
   InstanceConfig,
   InstanceVersions,
+  PublicInstanceList,
+  RedirectMapping,
   Skill,
   SwitchVersionResult,
 } from './types'
@@ -70,6 +72,22 @@ export function checkAuth(): Promise<{ authenticated: boolean }> {
 
 export function listInstances(): Promise<{ instances: Instance[] }> {
   return request('/api/instances')
+}
+
+export function listPublicInstances(): Promise<PublicInstanceList> {
+  return request('/api/public/instances')
+}
+
+export function getGlobalConfig(): Promise<{ mappings: RedirectMapping[] }> {
+  return request('/api/global-config')
+}
+
+export function saveGlobalConfig(mappings: RedirectMapping[]): Promise<{ success: boolean }> {
+  return request('/api/global-config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mappings }),
+  })
 }
 
 export function createInstance(name: string): Promise<Instance> {

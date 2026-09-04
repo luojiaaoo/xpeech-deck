@@ -17,6 +17,29 @@ class InstanceListOut(BaseModel):
     instances: list[InstanceOut]
 
 
+class PublicInstanceOut(BaseModel):
+    name: str
+    web_client_port: int
+
+
+class PublicInstanceListOut(BaseModel):
+    display_name: str
+    instances: list[PublicInstanceOut]
+
+
+class RedirectMappingOut(BaseModel):
+    redirect_to: str
+    instance_name: str
+
+
+class GlobalConfigOut(BaseModel):
+    mappings: list[RedirectMappingOut]
+
+
+class SaveGlobalConfigIn(BaseModel):
+    mappings: list[RedirectMappingOut]
+
+
 class CreateInstanceIn(BaseModel):
     name: str
 

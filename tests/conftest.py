@@ -60,7 +60,12 @@ def root_path(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def settings(root_path: Path) -> Settings:
-    return Settings(token=TOKEN, root_path=root_path)
+    return Settings(
+        token=TOKEN,
+        root_path=root_path,
+        console_log_path=root_path.parent / "console.jsonl",
+        global_config_path=root_path.parent / "global_config.json",
+    )
 
 
 @pytest.fixture

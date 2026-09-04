@@ -1,17 +1,27 @@
 import { useCallback, useEffect, useState } from 'react'
-import { Button, Layout, Modal, Result, Typography, message } from 'antd'
-import { CloudDownloadOutlined, CodeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Button, Card, Empty, Layout, Modal, Spin, Typography, message } from 'antd'
+import {
+  CloudDownloadOutlined,
+  CloudServerOutlined,
+  ClusterOutlined,
+  CodeOutlined,
+  ExportOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SettingOutlined,
+} from '@ant-design/icons'
 import InstanceTable, { type Action } from './InstanceTable'
 import CreateInstanceModal from './CreateInstanceModal'
 import ConfigInstanceModal from './ConfigInstanceModal'
 import CommandResultModal from './CommandResultModal'
 import DockerLogsModal from './DockerLogsModal'
+import GlobalConfigModal from './GlobalConfigModal'
 import PullImagesModal from './PullImagesModal'
 import SkillManagementModal from './SkillManagementModal'
 import SystemConsoleModal from './SystemConsoleModal'
 import VersionInstanceModal from './VersionInstanceModal'
 import * as api from './api'
-import type { ComposeResult, Instance } from './types'
+import type { ComposeResult, Instance, PublicInstanceList } from './types'
 
 const { Header, Content } = Layout
 
@@ -23,6 +33,8 @@ interface Busy {
 export default function App() {
   const [token, setToken] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
+  const [publicInfo, setPublicInfo] = useState<PublicInstanceList | null>(null)
+  const [publicLoading, setPublicLoading] = useState(true)
   const [instances, setInstances] = useState<Instance[]>([])
   const [loading, setLoading] = useState(false)
   const [busy, setBusy] = useState<Busy | null>(null)
@@ -31,6 +43,7 @@ export default function App() {
   const [result, setResult] = useState<ComposeResult | null>(null)
   const [resultOpen, setResultOpen] = useState(false)
   const [imagesOpen, setImagesOpen] = useState(false)
+  const [globalConfigOpen, setGlobalConfigOpen] = useState(false)
   const [skillsName, setSkillsName] = useState<string | null>(null)
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [versionName, setVersionName] = useState<string | null>(null)
@@ -49,6 +62,26 @@ export default function App() {
     }
     setToken(t)
     setReady(true)
+  }, [])
+
+  useEffect(() => {
+    let active = true
+    api
+      .listPublicInstances()
+      .then((data) => {
+        if (!active) return
+        setPublicInfo(data)
+        document.title = data.display_name
+      })
+      .catch((error) => {
+        if (active) message.error(error instanceof Error ? error.message : String(error))
+      })
+      .finally(() => {
+        if (active) setPublicLoading(false)
+      })
+    return () => {
+      active = false
+    }
   }, [])
 
   const showError = useCallback((e: unknown) => {
@@ -165,13 +198,78 @@ export default function App() {
 
   if (ready && !token) {
     return (
-      <Layout style={{ minHeight: '100vh' }}>
-        <Content style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Result
-            status="warning"
-            title="缺少访问 Token"
-            subTitle="请重新使用带有 ?token=xxx 的地址打开。"
-          />
+      <Layout className="public-page">
+        <div className="public-ambient" aria-hidden="true">
+          <span className="public-orb public-orb-one" />
+          <span className="public-orb public-orb-two" />
+          <span className="public-orb public-orb-three" />
+        </div>
+        <Content className="public-content">
+          <div className="public-brand">
+            <div className="public-brand-mark">
+              <ClusterOutlined />
+            </div>
+            <Typography.Title className="public-title" level={1}>
+              {publicInfo?.display_name ?? 'Xpeech Deck'}
+            </Typography.Title>
+            <div className="public-title-accent" aria-hidden="true" />
+          </div>
+          <div className="public-instance-stage">
+            <Spin spinning={publicLoading} wrapperClassName="public-spinner">
+              {publicInfo && publicInfo.instances.length > 0 ? (
+                <div className="instance-card-grid">
+                  {publicInfo.instances.map((instance) => (
+                    <Card
+                      key={instance.name}
+                      bordered={false}
+                      className="instance-card"
+                      role="link"
+                      tabIndex={0}
+                      onClick={() => {
+                        const target = new URL(window.location.href)
+                        target.protocol = 'http:'
+                        target.port = String(instance.web_client_port)
+                        target.pathname = '/'
+                        target.search = ''
+                        target.hash = ''
+                        window.open(target.toString(), '_blank', 'noopener,noreferrer')
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault()
+                          event.currentTarget.click()
+                        }
+                      }}
+                    >
+                      <div className="instance-card-top">
+                        <span className="instance-card-icon">
+                          <CloudServerOutlined />
+                        </span>
+                        <ExportOutlined className="instance-card-launch" />
+                      </div>
+                      <Typography.Title
+                        className="instance-card-name"
+                        level={3}
+                        title={instance.name}
+                      >
+                        {instance.name}
+                      </Typography.Title>
+                      <div className="instance-card-rule" />
+                      <div className="instance-card-port">
+                        <span className="instance-card-status" />
+                        <span>Web 端口</span>
+                        <code>{instance.web_client_port}</code>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              ) : publicLoading ? null : (
+                <div className="public-empty">
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无实例" />
+                </div>
+              )}
+            </Spin>
+          </div>
         </Content>
       </Layout>
     )
@@ -192,7 +290,7 @@ export default function App() {
       >
         <div>
           <Typography.Title level={3} style={{ color: '#fff', margin: 0 }}>
-            Xpeech Deck
+            {publicInfo?.display_name ?? 'Xpeech Deck'}
           </Typography.Title>
           <Typography.Text style={{ color: 'rgba(255,255,255,0.75)' }}>
             Xpeech 多实例管理
@@ -201,6 +299,13 @@ export default function App() {
         <div>
           <Button style={{ marginRight: 12 }} icon={<ReloadOutlined />} onClick={() => void loadInstances()}>
             刷新
+          </Button>
+          <Button
+            style={{ marginRight: 12 }}
+            icon={<SettingOutlined />}
+            onClick={() => setGlobalConfigOpen(true)}
+          >
+            全局配置
           </Button>
           <Button
             style={{ marginRight: 12 }}
@@ -259,6 +364,11 @@ export default function App() {
         blocked={busy !== null || logsBusy}
         onBusyChange={setImageBusy}
         onClose={() => setImagesOpen(false)}
+      />
+      <GlobalConfigModal
+        open={globalConfigOpen}
+        instances={instances}
+        onClose={() => setGlobalConfigOpen(false)}
       />
       <DockerLogsModal
         open={logsName !== null}

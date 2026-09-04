@@ -218,6 +218,8 @@ __marimo__/
 .streamlit/secrets.toml
 
 # Xpeech Deck
+global_config.json
+console.jsonl
 conf.toml
 frontend/node_modules/
 frontend/dist/

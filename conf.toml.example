@@ -7,11 +7,22 @@ token = "change-me"
 # Xpeech Deck 自身监听端口（可选，默认 7801）
 listen_port = 7801
 
+# 页面显示的系统名称（可选，默认 "Xpeech Deck"；修改后需重启后端）
+# display_name = "Xpeech Deck"
+
+# OAuth2 回调重定向使用的全局地址（可选；配置后需重启后端）
+# 必须带 http:// 或 https://；接受域名、IPv4 或 IPv6，不要填写端口或路径
+# global_host = "https://deck.example.com"
+
+# redirect_to → 实例名映射文件（可选；默认项目根目录 global_config.json）
+# 页面可实时编辑，也可直接修改 JSON 文件，无需重启
+# global_config_path = "global_config.json"
+
 # 所有 Xpeech 实例的父目录，创建/扫描实例都在此目录下进行
 # Linux 示例："/opt/xpeech-instances"
 # Windows 示例："E:/xpeech-instances"
 root_path = "/opt/xpeech-instances"
 
 # System Console 持久化文件（可选）
-# 默认：<root_path>/.xpeech-deck/console.jsonl
+# 默认：项目根目录 console.jsonl
 # console_log_path = "/var/log/xpeech-deck/console.jsonl"

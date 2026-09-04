@@ -5,18 +5,19 @@ from __future__ import annotations
 import io
 import json
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from .auth import require_token
 from .compose_service import ComposeService
 from .console_service import ConsoleBroker
 from .command_gate import CommandGate
-from .config import Settings
+from .config import DEFAULT_CONSOLE_LOG_PATH, Settings
 from .errors import DeckError, ValidationError
+from .global_config_service import read_redirect_mappings, save_redirect_mappings
 from .git_service import GitService
 from .image_service import ImageService
 from .instance_service import (
@@ -44,6 +45,11 @@ from .schemas import (
     InstanceConfigOut,
     InstanceListOut,
     InstanceOut,
+    GlobalConfigOut,
+    PublicInstanceListOut,
+    PublicInstanceOut,
+    RedirectMappingOut,
+    SaveGlobalConfigIn,
     MigrateSkillIn,
     ImageListOut,
     ImagePullOut,
@@ -66,11 +72,11 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def create_app(settings: Settings) -> FastAPI:
-    app = FastAPI(title="Xpeech Deck", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(title=settings.display_name, docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
     console_log_path = (
         settings.console_log_path
-        or settings.root_path / ".xpeech-deck" / "console.jsonl"
+        or DEFAULT_CONSOLE_LOG_PATH
     )
     app.state.console = ConsoleBroker(log_path=console_log_path)
     app.state.command_gate = CommandGate()
@@ -88,6 +94,23 @@ def create_app(settings: Settings) -> FastAPI:
     async def health():
         return {"status": "ok"}
 
+    @app.get(
+        "/api/public/instances",
+        response_model=PublicInstanceListOut,
+    )
+    async def get_public_instances():
+        instances = list_instances(settings.root_path)
+        return PublicInstanceListOut(
+            display_name=settings.display_name,
+            instances=[
+                PublicInstanceOut(
+                    name=instance["name"],
+                    web_client_port=instance["web_client_port"],
+                )
+                for instance in instances
+            ],
+        )
+
     # ---------- 认证 ----------
 
     @app.get(
@@ -97,6 +120,37 @@ def create_app(settings: Settings) -> FastAPI:
     )
     async def auth_check():
         return AuthCheckOut(authenticated=True)
+
+    # ---------- 全局配置 ----------
+
+    @app.get(
+        "/api/global-config",
+        dependencies=[Depends(require_token)],
+        response_model=GlobalConfigOut,
+    )
+    async def get_global_config():
+        mappings = read_redirect_mappings(settings.global_config_path)
+        return GlobalConfigOut(
+            mappings=[
+                RedirectMappingOut(redirect_to=key, instance_name=value)
+                for key, value in mappings.items()
+            ]
+        )
+
+    @app.put(
+        "/api/global-config",
+        dependencies=[Depends(require_token)],
+        response_model=SuccessOut,
+    )
+    async def put_global_config(body: SaveGlobalConfigIn):
+        mappings: dict[str, str] = {}
+        for item in body.mappings:
+            key = item.redirect_to.strip()
+            if key in mappings:
+                raise ValidationError(f"redirect_to 重复：{key}")
+            mappings[key] = item.instance_name
+        save_redirect_mappings(settings.global_config_path, mappings)
+        return SuccessOut(success=True)
 
     # ---------- 系统 Console ----------
 
@@ -361,15 +415,58 @@ def create_app(settings: Settings) -> FastAPI:
         result = await app.state.compose.logs(name, str(path), service)
         return ComposeResultOut(**result)
 
-    # ---------- 前端静态资源（最后挂载，避免覆盖 /api 与 /health） ----------
+    # ---------- 根路径重定向与前端静态资源 ----------
 
-    if (STATIC_DIR / "index.html").is_file():
-        app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
-    else:
-        @app.get("/", include_in_schema=False)
-        async def index_placeholder():
+    @app.get("/", include_in_schema=False)
+    async def root(request: Request):
+        # token 参数存在（即使值为空）或没有 redirect_to 时，均正常打开前端。
+        if "token" in request.query_params or "redirect_to" not in request.query_params:
+            if (STATIC_DIR / "index.html").is_file():
+                return FileResponse(STATIC_DIR / "index.html")
             return JSONResponse(
                 {"detail": "前端尚未构建，请在 frontend/ 目录运行 npm install && npm run build"}
             )
+
+        if not settings.global_host:
+            return JSONResponse(status_code=400, content={"detail": "global_host 未配置"})
+
+        redirect_to = request.query_params["redirect_to"]
+        mappings = read_redirect_mappings(settings.global_config_path)
+        instance_name = mappings.get(redirect_to)
+        if instance_name is None:
+            return JSONResponse(
+                status_code=404,
+                content={"detail": "redirect_to 未命中实例映射"},
+            )
+
+        instance = next(
+            (
+                item
+                for item in list_instances(settings.root_path)
+                if item["name"] == instance_name
+            ),
+            None,
+        )
+        if instance is None:
+            return JSONResponse(
+                status_code=404,
+                content={"detail": f"映射指向的实例 {instance_name} 不存在"},
+            )
+
+        target = (
+            f"{settings.global_host}:{instance['web_client_port']}"
+            "/api/auth/oauth2/callback"
+        )
+        passthrough = [
+            (key, value)
+            for key, value in request.query_params.multi_items()
+            if key in {"state", "oauth2provider"}
+        ]
+        if passthrough:
+            target = f"{target}?{urlencode(passthrough)}"
+        return RedirectResponse(target)
+
+    if (STATIC_DIR / "index.html").is_file():
+        app.mount("/", StaticFiles(directory=str(STATIC_DIR), html=True), name="static")
 
     return app

@@ -5,6 +5,21 @@ export interface Instance {
   path: string
 }
 
+export interface PublicInstance {
+  name: string
+  web_client_port: number
+}
+
+export interface PublicInstanceList {
+  display_name: string
+  instances: PublicInstance[]
+}
+
+export interface RedirectMapping {
+  redirect_to: string
+  instance_name: string
+}
+
 export interface InstanceConfig {
   name: string
   backend_port: number

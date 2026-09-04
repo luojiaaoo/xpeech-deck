@@ -159,6 +159,4 @@ def test_console_stream_route_is_registered(app):
 
 
 def test_application_console_uses_persistent_default_path(app, root_path):
-    assert app.state.console.log_path == (
-        root_path / ".xpeech-deck" / "console.jsonl"
-    )
+    assert app.state.console.log_path == root_path.parent / "console.jsonl"

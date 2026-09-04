@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+import re
 import shutil
 import tomllib
 from dataclasses import dataclass
+from ipaddress import ip_address
 from pathlib import Path
+from urllib.parse import urlsplit
 
 # 项目根目录：xpeech_deck 包所在目录的上一级
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_DISPLAY_NAME = "Xpeech Deck"
+DEFAULT_GLOBAL_CONFIG_PATH = PROJECT_ROOT / "global_config.json"
+DEFAULT_CONSOLE_LOG_PATH = PROJECT_ROOT / "console.jsonl"
+HOST_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+GLOBAL_HOST_ERROR = (
+    "conf.toml 中的 global_host 必须是以 http:// 或 https:// 开头的有效地址，"
+    "且不能包含端口、路径、查询参数或认证信息"
+)
 
 
 @dataclass(frozen=True)
@@ -17,6 +28,76 @@ class Settings:
     root_path: Path
     console_log_path: Path | None = None
     listen_port: int = 7801
+    display_name: str = DEFAULT_DISPLAY_NAME
+    global_host: str | None = None
+    global_config_path: Path = DEFAULT_GLOBAL_CONFIG_PATH
+
+
+def _project_relative_path(value: object, default: Path) -> Path:
+    """将可选配置路径解析为绝对路径，空值使用项目根目录下的默认文件。"""
+    raw = str(value).strip() if value is not None else ""
+    path = Path(raw).expanduser() if raw else default
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path.resolve()
+
+
+def _normalize_hostname(host: str) -> str:
+    """校验并规范化域名/IP；IPv6 返回适合放入 URL authority 的方括号形式。"""
+    try:
+        parsed_ip = ip_address(host)
+        return f"[{parsed_ip}]" if parsed_ip.version == 6 else str(parsed_ip)
+    except ValueError:
+        pass
+
+    # 防止形似 IPv4 的非法值（例如 999.1.1.1）被当成普通域名。
+    if re.fullmatch(r"[0-9.]+", host):
+        raise ValueError(GLOBAL_HOST_ERROR)
+    domain = host[:-1] if host.endswith(".") else host
+    try:
+        ascii_domain = domain.encode("idna").decode("ascii")
+    except UnicodeError as exc:
+        raise ValueError(GLOBAL_HOST_ERROR) from exc
+    if (
+        not ascii_domain
+        or len(ascii_domain) > 253
+        or any(not HOST_LABEL_RE.fullmatch(label) for label in ascii_domain.split("."))
+    ):
+        raise ValueError(GLOBAL_HOST_ERROR)
+    return f"{ascii_domain}." if host.endswith(".") else ascii_domain
+
+
+def _validate_global_host(value: object) -> str | None:
+    """校验带 HTTP(S) 协议的全局主机地址，并返回无末尾斜杠的规范形式。"""
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if not isinstance(value, str):
+        raise ValueError(GLOBAL_HOST_ERROR)
+
+    raw = value.strip()
+    if any(character.isspace() for character in raw):
+        raise ValueError(GLOBAL_HOST_ERROR)
+    try:
+        parsed = urlsplit(raw)
+        configured_port = parsed.port
+    except ValueError as exc:
+        raise ValueError(GLOBAL_HOST_ERROR) from exc
+    if (
+        parsed.scheme.lower() not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or configured_port is not None
+        or parsed.netloc.endswith(":")
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+        or parsed.hostname is None
+    ):
+        raise ValueError(GLOBAL_HOST_ERROR)
+
+    hostname = _normalize_hostname(parsed.hostname)
+    return f"{parsed.scheme.lower()}://{hostname}"
 
 
 def load_settings(path: Path | None = None) -> Settings:
@@ -40,15 +121,19 @@ def load_settings(path: Path | None = None) -> Settings:
         root_path = (PROJECT_ROOT / root_path).resolve()
     root_path = root_path.resolve()
 
-    raw_console_log = str(data.get("console_log_path", "")).strip()
-    if raw_console_log:
-        console_log_path = Path(raw_console_log).expanduser()
-        if not console_log_path.is_absolute():
-            console_log_path = (PROJECT_ROOT / console_log_path).resolve()
-        else:
-            console_log_path = console_log_path.resolve()
-    else:
-        console_log_path = root_path / ".xpeech-deck" / "console.jsonl"
+    console_log_path = _project_relative_path(
+        data.get("console_log_path"), DEFAULT_CONSOLE_LOG_PATH
+    )
+
+    display_name = str(data.get("display_name", DEFAULT_DISPLAY_NAME)).strip()
+    if not display_name:
+        display_name = DEFAULT_DISPLAY_NAME
+
+    global_host = _validate_global_host(data.get("global_host"))
+
+    global_config_path = _project_relative_path(
+        data.get("global_config_path"), DEFAULT_GLOBAL_CONFIG_PATH
+    )
 
     listen_port = data.get("listen_port", 7801)
     if isinstance(listen_port, bool) or not isinstance(listen_port, int):
@@ -61,6 +146,9 @@ def load_settings(path: Path | None = None) -> Settings:
         root_path=root_path,
         console_log_path=console_log_path,
         listen_port=listen_port,
+        display_name=display_name,
+        global_host=global_host,
+        global_config_path=global_config_path,
     )
 
 
