@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 import shutil
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from ipaddress import ip_address
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DISPLAY_NAME = "Xpeech Deck"
 DEFAULT_GLOBAL_CONFIG_PATH = PROJECT_ROOT / "global_config.json"
 DEFAULT_CONSOLE_LOG_PATH = PROJECT_ROOT / "console.jsonl"
+DEFAULT_REDIS_URL = "redis://localhost:6379/0"
 HOST_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 GLOBAL_HOST_ERROR = (
     "conf.toml 中的 global_host 必须是以 http:// 或 https:// 开头的有效地址，"
@@ -31,6 +32,8 @@ class Settings:
     display_name: str = DEFAULT_DISPLAY_NAME
     global_host: str | None = None
     global_config_path: Path = DEFAULT_GLOBAL_CONFIG_PATH
+    redis_url: str = DEFAULT_REDIS_URL
+    redis_password: str = field(default="", repr=False)
 
 
 def _project_relative_path(value: object, default: Path) -> Path:
@@ -135,6 +138,12 @@ def load_settings(path: Path | None = None) -> Settings:
         data.get("global_config_path"), DEFAULT_GLOBAL_CONFIG_PATH
     )
 
+    redis_url = str(data.get("redis_url", DEFAULT_REDIS_URL)).strip()
+    if not redis_url:
+        raise ValueError("conf.toml 中的 redis_url 不能为空")
+
+    redis_password = str(data.get("redis_password", ""))
+
     listen_port = data.get("listen_port", 7801)
     if isinstance(listen_port, bool) or not isinstance(listen_port, int):
         raise ValueError("conf.toml 中的 listen_port 必须是 1–65535 之间的整数")
@@ -149,6 +158,8 @@ def load_settings(path: Path | None = None) -> Settings:
         display_name=display_name,
         global_host=global_host,
         global_config_path=global_config_path,
+        redis_url=redis_url,
+        redis_password=redis_password,
     )
 
 

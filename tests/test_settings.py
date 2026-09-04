@@ -11,6 +11,7 @@ from xpeech_deck.config import (
     DEFAULT_CONSOLE_LOG_PATH,
     DEFAULT_DISPLAY_NAME,
     DEFAULT_GLOBAL_CONFIG_PATH,
+    DEFAULT_REDIS_URL,
     Settings,
     load_settings,
 )
@@ -44,6 +45,8 @@ def test_global_settings_have_project_file_defaults(tmp_path: Path) -> None:
     assert settings.global_host is None
     assert settings.global_config_path == DEFAULT_GLOBAL_CONFIG_PATH
     assert settings.console_log_path == DEFAULT_CONSOLE_LOG_PATH
+    assert settings.redis_url == DEFAULT_REDIS_URL
+    assert settings.redis_password == ""
 
 
 def test_global_settings_can_be_configured(tmp_path: Path) -> None:
@@ -52,7 +55,9 @@ def test_global_settings_can_be_configured(tmp_path: Path) -> None:
             tmp_path,
             'display_name = "My Deck"\n'
             'global_host = "https://deck.example.com"\n'
-            'global_config_path = "runtime/global.json"\n',
+            'global_config_path = "runtime/global.json"\n'
+            'redis_url = "redis://redis.example.com:6380/2"\n'
+            'redis_password = "secret"\n',
         )
     )
 
@@ -61,6 +66,8 @@ def test_global_settings_can_be_configured(tmp_path: Path) -> None:
     assert settings.global_config_path == (
         DEFAULT_GLOBAL_CONFIG_PATH.parent / "runtime" / "global.json"
     )
+    assert settings.redis_url == "redis://redis.example.com:6380/2"
+    assert settings.redis_password == "secret"
 
 
 @pytest.mark.parametrize(

@@ -81,7 +81,28 @@ http://localhost:7801/?token=your-token
 - Token 只保存在页面内存中，打开页面后自动从地址栏清除；
 - 刷新页面后 Token 丢失，需重新使用带 `?token=xxx` 的地址；
 - 不使用 Cookie / localStorage / 登录表单；
-- `GET /health` 与 `GET /api/public/instances` 是公开接口；后者仅返回系统名称、实例名和 Web 端口，其余 `/api/*` 必须携带 `Authorization: Bearer <token>`。
+- `GET /health`、`GET /api/public/instances` 以及下述 Redis 临时键值接口是公开接口；其余 `/api/*` 必须携带 `Authorization: Bearer <token>`。
+
+### OAuth2 注入上下文缓存接口
+
+外部系统可以把 OAuth2 `state` 作为 key，先将需要注入的上下文写入临时缓存。`state` 随 OAuth2 流程传递到 Xpeech 子实例后，子实例再通过读取接口取回上下文。
+
+以下接口无需 Token。Redis key 会自动使用内置的专用前缀，并在写入 60 秒后过期；读取不会延长过期时间：
+
+```http
+PUT /api/public/redis/oauth2context/<state>
+Content-Type: application/json
+
+{"value":"serialized-context"}
+```
+
+读取尚未过期的值：
+
+```http
+GET /api/public/redis/oauth2context/<state>
+```
+
+成功时返回 `{"key":"<state>","value":"serialized-context"}`；键不存在或已过期时返回 404。Redis 连接通过 `conf.toml` 中的 `redis_url` 和 `redis_password` 配置，内部 key 前缀无需配置。
 
 不带 Token 访问根路径时，页面展示系统名称与实例卡片；卡片只包含实例名和 Web 端口，点击后在新标签页打开对应 Web 界面。没有实例时仅显示「暂无实例」。
 

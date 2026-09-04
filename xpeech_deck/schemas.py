@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal
 
 
@@ -25,6 +25,20 @@ class PublicInstanceOut(BaseModel):
 class PublicInstanceListOut(BaseModel):
     display_name: str
     instances: list[PublicInstanceOut]
+
+
+class RedisWriteIn(BaseModel):
+    value: str = Field(max_length=65_536)
+
+
+class RedisWriteOut(BaseModel):
+    key: str
+    expires_in: int
+
+
+class RedisValueOut(BaseModel):
+    key: str
+    value: str
 
 
 class RedirectMappingOut(BaseModel):

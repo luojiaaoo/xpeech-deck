@@ -18,6 +18,11 @@ listen_port = 7801
 # 页面可实时编辑，也可直接修改 JSON 文件，无需重启
 # global_config_path = "global_config.json"
 
+# OAuth2 注入上下文临时缓存使用的 Redis（可选；修改后需重启后端）
+# redis_url 只填写连接串，密码单独填写；所有写入固定在 60 秒后过期
+redis_url = "redis://localhost:6379/0"
+redis_password = "change-me"
+
 # 所有 Xpeech 实例的父目录，创建/扫描实例都在此目录下进行
 # Linux 示例："/opt/xpeech-instances"
 # Windows 示例："E:/xpeech-instances"

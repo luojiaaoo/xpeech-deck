@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import io
 import json
+from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Annotated
 from urllib.parse import quote, urlencode
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Depends, FastAPI, Path as ApiPath, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -16,7 +18,7 @@ from .compose_service import ComposeService
 from .console_service import ConsoleBroker
 from .command_gate import CommandGate
 from .config import DEFAULT_CONSOLE_LOG_PATH, Settings
-from .errors import DeckError, ValidationError
+from .errors import DeckError, NotFoundError, ValidationError
 from .global_config_service import read_redirect_mappings, save_redirect_mappings
 from .git_service import GitService
 from .image_service import ImageService
@@ -27,6 +29,7 @@ from .instance_service import (
     read_instance_config,
     save_instance_config,
 )
+from .redis_service import RedisStore
 from .skill_service import (
     MAX_ARCHIVE_BYTES,
     delete_custom_skill,
@@ -48,6 +51,9 @@ from .schemas import (
     GlobalConfigOut,
     PublicInstanceListOut,
     PublicInstanceOut,
+    RedisValueOut,
+    RedisWriteIn,
+    RedisWriteOut,
     RedirectMappingOut,
     SaveGlobalConfigIn,
     MigrateSkillIn,
@@ -69,11 +75,31 @@ from .schemas import (
 )
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+OAUTH_CONTEXT_KEY_PREFIX = "xpeech-deck:oauth-context:"
+OAUTH_CONTEXT_TTL_SECONDS = 60
+
+
+def _oauth_context_key(state: str) -> str:
+    return f"{OAUTH_CONTEXT_KEY_PREFIX}{state}"
 
 
 def create_app(settings: Settings) -> FastAPI:
-    app = FastAPI(title=settings.display_name, docs_url=None, redoc_url=None, openapi_url=None)
+    @asynccontextmanager
+    async def lifespan(application: FastAPI):
+        try:
+            yield
+        finally:
+            await application.state.redis.close()
+
+    app = FastAPI(
+        title=settings.display_name,
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=lifespan,
+    )
     app.state.settings = settings
+    app.state.redis = RedisStore(settings.redis_url, settings.redis_password)
     console_log_path = (
         settings.console_log_path
         or DEFAULT_CONSOLE_LOG_PATH
@@ -110,6 +136,33 @@ def create_app(settings: Settings) -> FastAPI:
                 for instance in instances
             ],
         )
+
+    @app.put(
+        "/api/public/redis/oauth2context/{state}",
+        response_model=RedisWriteOut,
+    )
+    async def put_public_redis(
+        body: RedisWriteIn,
+        state: Annotated[str, ApiPath(min_length=1, max_length=256)],
+    ):
+        await app.state.redis.set(
+            _oauth_context_key(state),
+            body.value,
+            ttl_seconds=OAUTH_CONTEXT_TTL_SECONDS,
+        )
+        return RedisWriteOut(key=state, expires_in=OAUTH_CONTEXT_TTL_SECONDS)
+
+    @app.get(
+        "/api/public/redis/oauth2context/{state}",
+        response_model=RedisValueOut,
+    )
+    async def get_public_redis(
+        state: Annotated[str, ApiPath(min_length=1, max_length=256)],
+    ):
+        value = await app.state.redis.get(_oauth_context_key(state))
+        if value is None:
+            raise NotFoundError("Redis key 不存在或已过期")
+        return RedisValueOut(key=state, value=value)
 
     # ---------- 认证 ----------
 

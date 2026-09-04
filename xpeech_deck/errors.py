@@ -41,3 +41,9 @@ class CommandTimeoutError(DeckError):
     """Compose 命令超时（504）。"""
 
     status_code = 504
+
+
+class ServiceUnavailableError(DeckError):
+    """外部依赖暂时不可用（503）。"""
+
+    status_code = 503
