@@ -120,7 +120,7 @@ Content-Type: application/json
 GET /api/public/redis/oauth2context/<state>
 ```
 
-成功时返回 `{"key":"<state>","value":"serialized-context"}`；键不存在或已过期时返回 404。Redis 连接通过 `conf.toml` 中的 `redis_url` 和 `redis_password` 配置，内部 key 前缀无需配置。
+成功时以 `text/plain` 直接返回存储值（如 `serialized-context`）；键不存在或已过期时返回 404。Redis 连接通过 `conf.toml` 中的 `redis_url` 和 `redis_password` 配置，内部 key 前缀无需配置。
 
 不带 Token 访问根路径时，页面展示系统名称与实例卡片；卡片只包含实例名和 Web 端口，点击后在新标签页打开对应 Web 界面。没有实例时仅显示「暂无实例」。
 

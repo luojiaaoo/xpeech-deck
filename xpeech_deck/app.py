@@ -10,7 +10,13 @@ from typing import Annotated
 from urllib.parse import quote, urlencode
 
 from fastapi import Depends, FastAPI, Path as ApiPath, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from fastapi.staticfiles import StaticFiles
 
 from .auth import require_token
@@ -51,7 +57,6 @@ from .schemas import (
     GlobalConfigOut,
     PublicInstanceListOut,
     PublicInstanceOut,
-    RedisValueOut,
     RedisWriteIn,
     RedisWriteOut,
     RedirectMappingOut,
@@ -154,7 +159,7 @@ def create_app(settings: Settings) -> FastAPI:
 
     @app.get(
         "/api/public/redis/oauth2context/{state}",
-        response_model=RedisValueOut,
+        response_class=PlainTextResponse,
     )
     async def get_public_redis(
         state: Annotated[str, ApiPath(min_length=1, max_length=256)],
@@ -162,7 +167,7 @@ def create_app(settings: Settings) -> FastAPI:
         value = await app.state.redis.get(_oauth_context_key(state))
         if value is None:
             raise NotFoundError("Redis key 不存在或已过期")
-        return RedisValueOut(key=state, value=value)
+        return value
 
     # ---------- 认证 ----------
 

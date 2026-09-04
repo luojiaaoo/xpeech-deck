@@ -36,11 +36,6 @@ class RedisWriteOut(BaseModel):
     expires_in: int
 
 
-class RedisValueOut(BaseModel):
-    key: str
-    value: str
-
-
 class RedirectMappingOut(BaseModel):
     redirect_to: str
     instance_name: str

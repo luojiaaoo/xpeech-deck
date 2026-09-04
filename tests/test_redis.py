@@ -56,10 +56,8 @@ def test_public_redis_write_and_read_need_no_token(client, fake_redis):
 
     read_response = client.get("/api/public/redis/oauth2context/oauth-state")
     assert read_response.status_code == 200
-    assert read_response.json() == {
-        "key": "oauth-state",
-        "value": "temporary-value",
-    }
+    assert read_response.headers["content-type"] == "text/plain; charset=utf-8"
+    assert read_response.text == "temporary-value"
 
 
 def test_public_redis_read_returns_404_when_key_is_absent(client, fake_redis):
