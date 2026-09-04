@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import tomllib
+from pathlib import Path
+
 import pytest
 
 from xpeech_deck.app import OAUTH_CONTEXT_KEY_PREFIX, OAUTH_CONTEXT_TTL_SECONDS
 from xpeech_deck.redis_service import RedisStore
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class FakeRedisClient:
@@ -62,3 +67,14 @@ def test_public_redis_read_returns_404_when_key_is_absent(client, fake_redis):
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Redis key 不存在或已过期"}
+
+
+def test_redis_compose_defaults_match_example_config():
+    example = tomllib.loads(
+        (PROJECT_ROOT / "conf.toml.example").read_text(encoding="utf-8")
+    )
+    compose = (PROJECT_ROOT / "compose.redis.yaml").read_text(encoding="utf-8")
+
+    assert example["redis_url"] == "redis://localhost:6379/0"
+    assert '"127.0.0.1:6379:6379"' in compose
+    assert f'${{REDIS_PASSWORD:-{example["redis_password"]}}}' in compose

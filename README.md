@@ -51,6 +51,8 @@ listen_port = 7801                       # 可选，Deck 自身监听端口
 display_name = "Xpeech Deck"             # 可选，页面显示名称
 global_host = "https://deck.example.com"  # 可选，OAuth2 回调使用的全局地址
 global_config_path = "global_config.json" # 可选，redirect_to 映射文件
+redis_url = "redis://localhost:6379/0"     # OAuth2 注入上下文缓存
+redis_password = "change-me"              # Redis 密码
 ```
 
 `display_name` 与 `global_host` 在后端启动时读取，修改后需要重启；`global_host` 必须以 `http://` 或 `https://` 开头，主机部分接受合法域名、IPv4 或 IPv6，但不能自行包含端口、路径、查询参数或认证信息。重定向协议会直接使用这里配置的协议。`global_config_path` 支持绝对路径或相对于项目根目录的路径，默认为项目根目录下的 `global_config.json`。
@@ -62,6 +64,22 @@ global_config_path = "global_config.json" # 可选，redirect_to 映射文件
 3. 检查 `docker` 与 `git` 命令是否可执行（缺失时仅告警，对应操作会失败）。
 
 ## 启动
+
+先启动项目配套的 Redis：
+
+```bash
+docker compose -f compose.redis.yaml up -d
+```
+
+Compose 默认只监听宿主机的 `127.0.0.1:6379`，密码为 `change-me`，与 `conf.toml.example` 一致。如果修改了 `conf.toml` 中的 `redis_password`，启动 Compose 时传入相同密码：
+
+```bash
+REDIS_PASSWORD='your-redis-password' docker compose -f compose.redis.yaml up -d
+```
+
+Redis 在这里仅用于 60 秒 OAuth2 上下文缓存，因此 Compose 已关闭 RDB 和 AOF 持久化。停止 Redis 可执行 `docker compose -f compose.redis.yaml down`。
+
+然后启动 Xpeech Deck：
 
 ```bash
 uv run python -m xpeech_deck
@@ -128,7 +146,7 @@ http://localhost:7801/?redirect_to=desktop&state=xxx&oauth2provider=feishu
 Deck 会根据映射找到实例 Web 端口，并重定向到：
 
 ```text
-https://deck.example.com:<实例 Web 端口>/api/auth/oauth2/callback?state=xxx&oauth2provider=feishu
+https://deck.example.com:<实例 Web 端口>?state=xxx&oauth2provider=feishu
 ```
 
 `state` 与 `oauth2provider` 会透传。未配置 `global_host` 返回 400，映射未命中或映射指向的实例不存在返回 404，均不会回退到前端页面。只要 URL 带有 `token` 参数，或没有 `redirect_to` 参数，就正常打开前端。

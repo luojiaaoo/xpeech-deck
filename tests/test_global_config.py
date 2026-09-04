@@ -83,8 +83,7 @@ def test_root_redirects_using_realtime_mapping_and_passes_oauth_params(
 
     assert response.status_code == 307
     assert response.headers["location"] == (
-        "https://deck.example.com:7939/api/auth/oauth2/callback"
-        "?state=a%2Fb%3D&oauth2provider=feishu"
+        "https://deck.example.com:7939?state=a%2Fb%3D&oauth2provider=feishu"
     )
 
     configured.global_config_path.write_text(
