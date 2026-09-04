@@ -2,10 +2,10 @@
 
 set -euo pipefail
 
-if ! pgrep -f 'python -m xpeech_deck$' >/dev/null; then
+if ! pgrep -f -- '-m xpeech_deck$' >/dev/null; then
     echo "Xpeech Deck 未运行"
     exit 0
 fi
 
-pkill -f 'python -m xpeech_deck$'
+pkill -f -- '-m xpeech_deck$'
 echo "Xpeech Deck 已停止"

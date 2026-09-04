@@ -8,7 +8,7 @@ PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${PROJECT_ROOT}"
 
 was_running=false
-if pgrep -f 'python -m xpeech_deck$' >/dev/null; then
+if pgrep -f -- '-m xpeech_deck$' >/dev/null; then
     was_running=true
 fi
 

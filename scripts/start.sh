@@ -8,15 +8,15 @@ LOG_FILE="${PROJECT_ROOT}/deck.log"
 
 cd "${PROJECT_ROOT}"
 
-if pgrep -f 'python -m xpeech_deck$' >/dev/null; then
+if pgrep -f -- '-m xpeech_deck$' >/dev/null; then
     echo "Xpeech Deck 已在运行"
     exit 0
 fi
 
-nohup uv run --frozen python -m xpeech_deck >>"${LOG_FILE}" 2>&1 &
+nohup uv run -m xpeech_deck >>"${LOG_FILE}" 2>&1 &
 
 sleep 1
-if pgrep -f 'python -m xpeech_deck$' >/dev/null; then
+if pgrep -f -- '-m xpeech_deck$' >/dev/null; then
     echo "Xpeech Deck 启动成功"
     echo "日志：${LOG_FILE}"
 else
