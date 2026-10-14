@@ -51,6 +51,7 @@ export interface GitVersion {
   kind: 'branch' | 'tag' | 'commit'
   commit: string
   committed_at: string | null
+  branches: string[]
 }
 
 export interface InstanceVersions {

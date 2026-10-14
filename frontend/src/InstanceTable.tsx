@@ -81,7 +81,7 @@ export default function InstanceTable({
       key: 'version',
       width: 100,
       render: (_, record) => (
-        <Button icon={<BranchesOutlined />} disabled={commandBusy} onClick={() => onVersion(record.name)}>
+        <Button icon={<BranchesOutlined />} onClick={() => onVersion(record.name)}>
           切换
         </Button>
       ),

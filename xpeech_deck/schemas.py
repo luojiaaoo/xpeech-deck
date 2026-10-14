@@ -73,6 +73,7 @@ class GitVersionOut(BaseModel):
     kind: Literal["branch", "tag", "commit"]
     commit: str
     committed_at: str | None = None
+    branches: list[str] = Field(default_factory=list)
 
 
 class InstanceVersionsOut(BaseModel):

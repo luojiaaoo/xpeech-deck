@@ -106,6 +106,10 @@ export function getVersions(name: string): Promise<InstanceVersions> {
   return request(`/api/instances/${encodeURIComponent(name)}/versions`)
 }
 
+export function fetchInstance(name: string): Promise<GitFetchResult> {
+  return request(`/api/instances/${encodeURIComponent(name)}/fetch`, { method: 'POST' })
+}
+
 export function switchVersion(name: string, ref: string): Promise<SwitchVersionResult> {
   return request(`/api/instances/${encodeURIComponent(name)}/version`, {
     method: 'POST',

@@ -113,7 +113,7 @@ def create_app(settings: Settings) -> FastAPI:
     app.state.command_gate = CommandGate()
     app.state.compose = ComposeService(console=app.state.console, gate=app.state.command_gate)
     app.state.images = ImageService(console=app.state.console, gate=app.state.command_gate)
-    app.state.git = GitService(console=app.state.console, gate=app.state.command_gate)
+    app.state.git = GitService(console=app.state.console)
 
     @app.exception_handler(DeckError)
     async def deck_error_handler(request: Request, exc: DeckError):
@@ -284,6 +284,16 @@ def create_app(settings: Settings) -> FastAPI:
         paths = [(item["name"], Path(item["path"])) for item in instances]
         results = await app.state.git.fetch_all(paths)
         return GitFetchAllOut(results=[GitFetchResultOut(**item) for item in results])
+
+    @app.post(
+        "/api/instances/{name}/fetch",
+        dependencies=[Depends(require_token)],
+        response_model=GitFetchResultOut,
+    )
+    async def fetch_instance(name: str):
+        path = _recognize_instance(settings.root_path, name)
+        result = await app.state.git.fetch(name, path)
+        return GitFetchResultOut(**result)
 
     @app.get(
         "/api/instances/{name}/versions",

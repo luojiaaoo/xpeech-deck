@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
+import subprocess
+
+import pytest
+
+from xpeech_deck.errors import CommandTimeoutError
 from xpeech_deck.git_service import (
     GIT_NETWORK_OPTIONS,
     VERSION_HISTORY_LIMIT,
@@ -112,7 +119,7 @@ def test_fetch_all_instances_api(client, auth_headers, make_instance):
         commands.append((cmd, cwd))
         return FakeProcess(stderr=b"updated\n")
 
-    client.app.state.git = GitService(runner=runner, gate=client.app.state.command_gate)
+    client.app.state.git = GitService(runner=runner)
     response = client.post("/api/instances/fetch", headers=auth_headers)
 
     assert response.status_code == 200
@@ -132,7 +139,7 @@ def test_failed_clone_removes_reserved_directory(client, auth_headers, root_path
     async def runner(cmd, cwd):
         return FakeProcess(stderr=b"repository unavailable\n", returncode=1)
 
-    client.app.state.git = GitService(runner=runner, gate=client.app.state.command_gate)
+    client.app.state.git = GitService(runner=runner)
     response = client.post(
         "/api/instances", json={"name": "broken"}, headers=auth_headers
     )
@@ -152,6 +159,8 @@ def test_versions_and_reset_hard_api(client, auth_headers, make_instance):
             # reset 后返回 tag 指向的 commit。
             head = TAG_COMMIT if any(item[:3] == ["git", "reset", "--hard"] for item in commands) else HEAD
             return FakeProcess(stdout=f"{head}\n".encode())
+        if cmd[:2] == ["git", "for-each-ref"] and any(arg.startswith("--contains=") for arg in cmd):
+            return FakeProcess(stdout=b"refs/remotes/origin/main\t\n")
         if cmd[:2] == ["git", "for-each-ref"]:
             return FakeProcess(stdout=REFS.encode())
         if cmd[:2] == ["git", "log"]:
@@ -160,11 +169,12 @@ def test_versions_and_reset_hard_api(client, auth_headers, make_instance):
             return FakeProcess(stdout=b"HEAD is now at bbbbbbbbbbbb\n")
         raise AssertionError(cmd)
 
-    client.app.state.git = GitService(runner=runner, gate=client.app.state.command_gate)
+    client.app.state.git = GitService(runner=runner)
 
     versions = client.get("/api/instances/demo01/versions", headers=auth_headers)
     assert versions.status_code == 200
     assert versions.json()["current_label"] == "origin/main"
+    assert all(item["branches"] == ["origin/main"] for item in versions.json()["versions"])
     assert [item["label"] for item in versions.json()["versions"]] == [
         "origin/main",
         "v1.0.0",
@@ -188,16 +198,122 @@ def test_switch_rejects_unknown_ref(client, auth_headers, make_instance):
     async def runner(cmd, cwd):
         if cmd[:3] == ["git", "rev-parse", "HEAD"]:
             return FakeProcess(stdout=f"{HEAD}\n".encode())
+        if cmd[:2] == ["git", "for-each-ref"] and any(arg.startswith("--contains=") for arg in cmd):
+            return FakeProcess(stdout=b"refs/remotes/origin/main\t\n")
         if cmd[:2] == ["git", "for-each-ref"]:
             return FakeProcess(stdout=REFS.encode())
         if cmd[:2] == ["git", "log"]:
             return FakeProcess(stdout=LOG.encode())
         raise AssertionError("reset 不应被执行")
 
-    client.app.state.git = GitService(runner=runner, gate=client.app.state.command_gate)
+    client.app.state.git = GitService(runner=runner)
     response = client.post(
         "/api/instances/demo01/version",
         json={"ref": "--keep"},
         headers=auth_headers,
     )
     assert response.status_code == 400
+
+
+def test_fetch_one_instance_api(client, auth_headers, make_instance, root_path):
+    make_instance("demo01")
+    make_instance("demo02")
+    commands = []
+
+    async def runner(cmd, cwd):
+        commands.append((cmd, cwd))
+        return FakeProcess(stderr=b"updated\n")
+
+    client.app.state.git = GitService(runner=runner)
+    response = client.post("/api/instances/demo02/fetch", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    assert response.json()["name"] == "demo02"
+    assert len(commands) == 1
+    assert commands[0][1] == str(root_path / "demo02")
+    assert "fetch" in commands[0][0]
+    assert not any("reset" in cmd for cmd, _ in commands)
+
+
+def test_fetch_one_requires_auth_and_existing_instance(client, auth_headers):
+    assert client.post("/api/instances/missing/fetch").status_code == 401
+    assert client.post("/api/instances/missing/fetch", headers=auth_headers).status_code == 404
+
+
+@pytest.mark.parametrize("timeout", [False, True])
+def test_fetch_one_reports_failure(client, auth_headers, make_instance, timeout):
+    make_instance("demo01")
+
+    async def runner(cmd, cwd):
+        if timeout:
+            raise CommandTimeoutError("Git 操作超时")
+        return FakeProcess(stderr=b"network unavailable", returncode=128)
+
+    client.app.state.git = GitService(runner=runner)
+    response = client.post("/api/instances/demo01/fetch", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["success"] is False
+    assert response.json()["exit_code"] == (124 if timeout else 128)
+    assert response.json()["stderr"]
+
+
+async def test_git_operations_run_while_docker_gate_is_held(app, tmp_path):
+    (tmp_path / ".git").mkdir()
+
+    async def runner(cmd, cwd):
+        assert app.state.command_gate.busy
+        if cmd[:3] == ["git", "rev-parse", "HEAD"]:
+            return FakeProcess(stdout=f"{HEAD}\n".encode())
+        if cmd[:2] == ["git", "log"]:
+            return FakeProcess(stdout=LOG.encode())
+        if any(arg.startswith("--contains=") for arg in cmd):
+            return FakeProcess(stdout=b"refs/remotes/origin/main\t\n")
+        if cmd[:2] == ["git", "for-each-ref"]:
+            return FakeProcess(stdout=REFS.encode())
+        return FakeProcess()
+
+    service = GitService(runner=runner)
+    async with app.state.command_gate.hold("Docker"):
+        results = await asyncio.gather(
+            service.clone(tmp_path / "clone"),
+            service.fetch_all([("demo01", tmp_path)]),
+            service.versions("demo01", tmp_path),
+            service.switch("demo01", tmp_path, "refs/remotes/origin/main"),
+        )
+        assert results[0]["success"]
+        assert results[1][0]["success"]
+        assert results[2]["current_label"] == "origin/main"
+        assert results[3]["success"]
+
+
+async def test_real_repository_commit_branch_membership(tmp_path):
+    env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+    def git(*args):
+        return subprocess.run(
+            ["git", "-c", "user.name=Test", "-c", "user.email=test@example.com", *args],
+            cwd=tmp_path, env=env, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+
+    git("init", "-b", "main")
+    git("commit", "--allow-empty", "-m", "shared commit")
+    shared = git("rev-parse", "HEAD")
+    git("tag", "-a", "v1", "-m", "release")
+    git("checkout", "-b", "feature")
+    git("commit", "--allow-empty", "-m", "feature commit")
+    feature = git("rev-parse", "HEAD")
+    git("update-ref", "refs/remotes/origin/feature", feature)
+    git("checkout", "main")
+    git("commit", "--allow-empty", "-m", "main commit")
+    main = git("rev-parse", "HEAD")
+    git("update-ref", "refs/remotes/origin/main", main)
+    git("symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+
+    data = await GitService().versions("demo01", tmp_path)
+    commits = {item["ref"]: item for item in data["versions"] if item["kind"] == "commit"}
+    assert commits[shared]["branches"] == ["origin/feature", "origin/main"]
+    assert commits[feature]["branches"] == ["origin/feature"]
+    assert commits[main]["branches"] == ["origin/main"]
+    tag = next(item for item in data["versions"] if item["kind"] == "tag")
+    assert tag["branches"] == ["origin/feature", "origin/main"]
+    assert not any(item["label"] == "origin/HEAD" for item in data["versions"])

@@ -50,6 +50,7 @@ export default function App() {
   const [imageBusy, setImageBusy] = useState(false)
   const [logsName, setLogsName] = useState<string | null>(null)
   const [logsBusy, setLogsBusy] = useState(false)
+  const [fetchingVersions, setFetchingVersions] = useState(false)
   const commandBusy = busy !== null || imageBusy || logsBusy
 
   // 从 URL 查询参数读取 Token，只保存在内存中，并清除地址栏
@@ -126,8 +127,6 @@ export default function App() {
           api.setToken(null)
           setToken(null)
           message.error('Token 无效，请重新使用带有 ?token=xxx 的地址打开')
-        } else if (e instanceof api.ApiError && e.status === 409) {
-          // 其他受管命令正在执行，等待下一分钟自动重试。
         } else if (active) {
           showError(e)
         }
@@ -143,6 +142,24 @@ export default function App() {
       window.clearInterval(timer)
     }
   }, [token, showError])
+
+  const handleFetchVersions = async () => {
+    if (fetchingVersions) return
+    setFetchingVersions(true)
+    try {
+      const { results } = await api.fetchAllInstances()
+      const failed = results.filter((item) => !item.success)
+      if (failed.length) {
+        message.error(failed.map((item) => `${item.name}：${item.stderr || item.stdout || '拉取失败'}`).join('；'))
+      } else {
+        message.success(results.length ? '全部实例的最新版本已拉取，可在「切换」中选择' : '暂无实例可拉取')
+      }
+    } catch (e) {
+      showError(e)
+    } finally {
+      setFetchingVersions(false)
+    }
+  }
 
   const handleCreate = async (name: string) => {
     try {
@@ -299,6 +316,14 @@ export default function App() {
         <div>
           <Button style={{ marginRight: 12 }} icon={<ReloadOutlined />} onClick={() => void loadInstances()}>
             刷新
+          </Button>
+          <Button
+            style={{ marginRight: 12 }}
+            icon={<CloudDownloadOutlined />}
+            loading={fetchingVersions}
+            onClick={() => void handleFetchVersions()}
+          >
+            拉取最新版本
           </Button>
           <Button
             style={{ marginRight: 12 }}

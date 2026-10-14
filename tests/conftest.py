@@ -93,7 +93,6 @@ def app(settings: Settings, repository_template: Path):
     application.state.git = GitService(
         runner=git_runner,
         console=application.state.console,
-        gate=application.state.command_gate,
     )
     application.state.test_git_commands = git_commands
     return application

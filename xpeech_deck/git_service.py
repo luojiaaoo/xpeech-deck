@@ -8,7 +8,6 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
-from .command_gate import CommandGate
 from .console_service import ConsoleBroker
 from .errors import CommandTimeoutError, FileOperationError, ValidationError
 
@@ -30,7 +29,6 @@ class GitService:
         runner: Callable[[list[str], str], Awaitable[Any]] | None = None,
         *,
         console: ConsoleBroker | None = None,
-        gate: CommandGate | None = None,
         clone_timeout: int = 1800,
         fetch_timeout: int = 300,
         command_timeout: int = 30,
@@ -39,7 +37,6 @@ class GitService:
     ) -> None:
         self._runner = runner or self._spawn
         self._console = console
-        self._gate = gate or CommandGate()
         self._clone_timeout = clone_timeout
         self._fetch_timeout = fetch_timeout
         self._command_timeout = command_timeout
@@ -150,91 +147,89 @@ class GitService:
                 shutil.rmtree(child)
 
     async def clone(self, target: Path) -> dict:
-        async with self._gate.hold(f"克隆实例：{target.name}"):
-            result: dict = {}
-            for attempt in range(1, self._clone_attempts + 1):
-                result = await self._execute(
-                    [
-                        "git",
-                        *GIT_NETWORK_OPTIONS,
-                        "clone",
-                        "--depth",
-                        str(VERSION_HISTORY_LIMIT),
-                        "--no-single-branch",
-                        XPEECH_REPOSITORY_URL,
-                        str(target),
-                    ],
-                    str(target.parent),
-                    self._clone_timeout,
+        result: dict = {}
+        for attempt in range(1, self._clone_attempts + 1):
+            result = await self._execute(
+                [
+                    "git",
+                    *GIT_NETWORK_OPTIONS,
+                    "clone",
+                    "--depth",
+                    str(VERSION_HISTORY_LIMIT),
+                    "--no-single-branch",
+                    XPEECH_REPOSITORY_URL,
+                    str(target),
+                ],
+                str(target.parent),
+                self._clone_timeout,
+            )
+            if result["success"] or not self._is_transient_network_failure(result):
+                return result
+            if attempt == self._clone_attempts:
+                result["stderr"] = (
+                    f"{result['stderr'].rstrip()}\n"
+                    f"Gitee 网络连接在 {self._clone_attempts} 次尝试后仍失败，"
+                    "请检查 WSL 的 HTTP_PROXY/HTTPS_PROXY 或稍后重试。"
                 )
-                if result["success"] or not self._is_transient_network_failure(result):
-                    return result
-                if attempt == self._clone_attempts:
-                    result["stderr"] = (
-                        f"{result['stderr'].rstrip()}\n"
-                        f"Gitee 网络连接在 {self._clone_attempts} 次尝试后仍失败，"
-                        "请检查 WSL 的 HTTP_PROXY/HTTPS_PROXY 或稍后重试。"
-                    )
-                    return result
+                return result
 
-                try:
-                    self._clear_clone_target(target)
-                except OSError as exc:
-                    result["stderr"] = (
-                        f"{result['stderr'].rstrip()}\n清理克隆半成品失败：{exc}"
-                    )
-                    return result
-                delay = float(attempt)
-                if self._console is not None:
-                    await self._console.publish(
-                        "system",
-                        f"克隆网络失败（{attempt}/{self._clone_attempts}），"
-                        f"{delay:g} 秒后重试\n",
-                        source="git",
-                        target=str(target),
-                        cwd=str(target.parent),
-                    )
-                await self._sleeper(delay)
-            return result
+            try:
+                self._clear_clone_target(target)
+            except OSError as exc:
+                result["stderr"] = (
+                    f"{result['stderr'].rstrip()}\n清理克隆半成品失败：{exc}"
+                )
+                return result
+            delay = float(attempt)
+            if self._console is not None:
+                await self._console.publish(
+                    "system",
+                    f"克隆网络失败（{attempt}/{self._clone_attempts}），"
+                    f"{delay:g} 秒后重试\n",
+                    source="git",
+                    target=str(target),
+                    cwd=str(target.parent),
+                )
+            await self._sleeper(delay)
+        return result
 
     async def fetch_all(self, instances: list[tuple[str, Path]]) -> list[dict]:
-        async with self._gate.hold("更新全部实例 Git 引用"):
-            results: list[dict] = []
-            for name, path in instances:
-                if not (path / ".git").exists():
-                    results.append(
-                        {
-                            "name": name,
-                            "success": False,
-                            "exit_code": 128,
-                            "stdout": "",
-                            "stderr": "实例不是 Git 仓库",
-                        }
-                    )
-                    continue
-                try:
-                    result = await self._execute(
-                        [
-                            "git",
-                            *GIT_NETWORK_OPTIONS,
-                            "fetch",
-                            f"--depth={VERSION_HISTORY_LIMIT}",
-                            "--all",
-                            "--prune",
-                            "--tags",
-                        ],
-                        str(path),
-                        self._fetch_timeout,
-                    )
-                except CommandTimeoutError as exc:
-                    result = {
-                        "success": False,
-                        "exit_code": 124,
-                        "stdout": "",
-                        "stderr": exc.message,
-                    }
-                results.append({"name": name, **result})
-            return results
+        results: list[dict] = []
+        for name, path in instances:
+            results.append(await self.fetch(name, path))
+        return results
+
+    async def fetch(self, name: str, path: Path) -> dict:
+        if not (path / ".git").exists():
+            return {
+                "name": name,
+                "success": False,
+                "exit_code": 128,
+                "stdout": "",
+                "stderr": "实例不是 Git 仓库",
+            }
+        try:
+            result = await self._execute(
+                [
+                    "git",
+                    *GIT_NETWORK_OPTIONS,
+                    "fetch",
+                    f"--depth={VERSION_HISTORY_LIMIT}",
+                    "--all",
+                    "--prune",
+                    "--tags",
+                ],
+                str(path),
+                self._fetch_timeout,
+            )
+        except CommandTimeoutError as exc:
+            result = {
+                "success": False,
+                "exit_code": 124,
+                "stdout": "",
+                "stderr": exc.message,
+            }
+        return {"name": name, **result}
 
     @staticmethod
     def _parse_versions(stdout: str, head: str) -> list[dict]:
@@ -291,7 +286,7 @@ class GitService:
             )
         return commits
 
-    async def _versions_unlocked(self, path: Path) -> dict:
+    async def _read_versions(self, path: Path) -> dict:
         if not (path / ".git").exists():
             raise FileOperationError("实例不是 Git 仓库")
 
@@ -335,7 +330,34 @@ class GitService:
             raise FileOperationError(detail)
 
         versions = self._parse_versions(refs_result["stdout"], head)
-        versions.extend(self._parse_commits(history_result["stdout"], head))
+        commits = self._parse_commits(history_result["stdout"], head)
+        for item in versions:
+            if item["kind"] == "branch":
+                item["branches"] = [item["label"]]
+        # 查询包含提交的远程分支，历史提交和共享提交也能显示分支名。
+        for item in [*commits, *(version for version in versions if version["kind"] == "tag")]:
+            branches_result = await self._execute(
+                [
+                    "git",
+                    "for-each-ref",
+                    f"--contains={item['ref']}",
+                    "--format=%(refname)%09%(symref)",
+                    "refs/remotes/origin",
+                ],
+                str(path),
+                self._command_timeout,
+            )
+            if not branches_result["success"]:
+                raise FileOperationError(branches_result["stderr"].strip() or "无法读取提交所属分支")
+            item["branches"] = sorted(
+                ref.removeprefix("refs/remotes/")
+                for line in branches_result["stdout"].splitlines()
+                for ref, _, symbolic_ref in [line.partition("\t")]
+                if ref.startswith("refs/remotes/origin/")
+                and ref != "refs/remotes/origin/HEAD"
+                and not symbolic_ref
+            )
+        versions.extend(commits)
         current = next((item for item in versions if item["_current"]), None)
         clean_versions = [
             {key: value for key, value in item.items() if not key.startswith("_")}
@@ -349,29 +371,27 @@ class GitService:
         }
 
     async def versions(self, name: str, path: Path) -> dict:
-        async with self._gate.hold(f"读取实例 {name} 版本"):
-            return await self._versions_unlocked(path)
+        return await self._read_versions(path)
 
     async def switch(self, name: str, path: Path, ref: str) -> dict:
-        async with self._gate.hold(f"切换实例 {name} 版本"):
-            version_data = await self._versions_unlocked(path)
-            allowed_refs = {item["ref"] for item in version_data["versions"]}
-            if ref not in allowed_refs:
-                raise ValidationError("版本不存在，请 fetch 后重试")
+        version_data = await self._read_versions(path)
+        allowed_refs = {item["ref"] for item in version_data["versions"]}
+        if ref not in allowed_refs:
+            raise ValidationError("版本不存在，请 fetch 后重试")
 
-            result = await self._execute(
-                ["git", "reset", "--hard", ref], str(path), self._command_timeout
+        result = await self._execute(
+            ["git", "reset", "--hard", ref], str(path), self._command_timeout
+        )
+        if not result["success"]:
+            detail = (
+                result["stderr"].strip()
+                or result["stdout"].strip()
+                or "未知错误"
             )
-            if not result["success"]:
-                detail = (
-                    result["stderr"].strip()
-                    or result["stdout"].strip()
-                    or "未知错误"
-                )
-                raise FileOperationError(f"切换版本失败：{detail}")
-            current = await self._versions_unlocked(path)
-            current_fields = {
-                key: current[key]
-                for key in ("current_ref", "current_label", "current_commit")
-            }
-            return {**result, **current_fields}
+            raise FileOperationError(f"切换版本失败：{detail}")
+        current = await self._read_versions(path)
+        current_fields = {
+            key: current[key]
+            for key in ("current_ref", "current_label", "current_commit")
+        }
+        return {**result, **current_fields}
