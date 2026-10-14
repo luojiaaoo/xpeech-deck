@@ -7,8 +7,6 @@ import type { ImageStatus } from './types'
 interface Props {
   open: boolean
   onClose: () => void
-  blocked: boolean
-  onBusyChange: (busy: boolean) => void
 }
 
 function formatSize(value: number | null): string {
@@ -29,17 +27,12 @@ function statusTag(status: ImageStatus['status']) {
   return <Tag color="error">检查失败</Tag>
 }
 
-export default function PullImagesModal({ open, onClose, blocked, onBusyChange }: Props) {
+export default function PullImagesModal({ open, onClose }: Props) {
   const [images, setImages] = useState<ImageStatus[]>([])
   const [loading, setLoading] = useState(false)
-  const [pulling, setPulling] = useState<string | null>(null)
+  const [pulling, setPulling] = useState<string[]>([])
 
   const loadImages = useCallback(async () => {
-    if (blocked) {
-      message.warning('当前有命令正在执行，请稍后重试')
-      return
-    }
-    onBusyChange(true)
     setLoading(true)
     try {
       const data = await api.listImages()
@@ -48,23 +41,15 @@ export default function PullImagesModal({ open, onClose, blocked, onBusyChange }
       message.error(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
-      onBusyChange(false)
     }
-  }, [blocked, onBusyChange])
+  }, [])
 
   useEffect(() => {
     if (open) void loadImages()
-    // 只在弹窗由关闭变为打开时自动检查，避免 busy 状态变化触发重复请求。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open])
+  }, [open, loadImages])
 
   const pullImage = async (image: ImageStatus) => {
-    if (blocked || loading || pulling !== null) {
-      message.warning('当前有命令正在执行，请稍后重试')
-      return
-    }
-    onBusyChange(true)
-    setPulling(image.key)
+    setPulling((current) => [...current, image.key])
     try {
       const result = await api.pullImage(image.key)
       setImages((current) => current.map((item) => (item.key === image.key ? result.image : item)))
@@ -76,8 +61,7 @@ export default function PullImagesModal({ open, onClose, blocked, onBusyChange }
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error))
     } finally {
-      setPulling(null)
-      onBusyChange(false)
+      setPulling((current) => current.filter((item) => item !== image.key))
     }
   }
 
@@ -92,7 +76,6 @@ export default function PullImagesModal({ open, onClose, blocked, onBusyChange }
           key="refresh"
           icon={<ReloadOutlined />}
           loading={loading}
-          disabled={blocked || pulling !== null}
           onClick={() => void loadImages()}
         >
           刷新状态
@@ -111,8 +94,7 @@ export default function PullImagesModal({ open, onClose, blocked, onBusyChange }
                   key="pull"
                   type="primary"
                   icon={<CloudDownloadOutlined />}
-                  loading={pulling === image.key}
-                  disabled={blocked || loading || (pulling !== null && pulling !== image.key)}
+                  loading={pulling.includes(image.key)}
                   onClick={() => void pullImage(image)}
                 >
                   拉取 {image.label}

@@ -1,4 +1,4 @@
-"""Compose 命令执行器：同步等待、超时控制、同实例互斥。"""
+"""Compose 命令执行器：同步等待、超时控制，允许并发执行。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from collections.abc import Awaitable, Callable
 
 from .errors import CommandTimeoutError, ConflictError, ValidationError
 from .console_service import ConsoleBroker, communicate_with_console
-from .command_gate import CommandGate
 
 # 操作名 -> 命令参数（禁止 shell=True，参数以列表传递，防止注入）
 ACTIONS: dict[str, list[str]] = {
@@ -38,19 +37,17 @@ DEFAULT_TIMEOUTS: dict[str, int] = {
 
 
 class ComposeService:
-    """统一的 Compose 命令执行器，所有实例共用平台级命令锁。"""
+    """统一的 Compose 命令执行器，各次调用独立执行。"""
 
     def __init__(
         self,
         runner: Callable[[list[str], str], Awaitable] | None = None,
         timeouts: dict[str, int] | None = None,
         console: ConsoleBroker | None = None,
-        gate: CommandGate | None = None,
     ) -> None:
         self._runner = runner or self._spawn
         self._timeouts: dict[str, int] = {**DEFAULT_TIMEOUTS, **(timeouts or {})}
         self._console = console
-        self._gate = gate or CommandGate()
 
     async def _spawn(self, cmd: list[str], cwd: str):
         return await asyncio.create_subprocess_exec(
@@ -63,16 +60,14 @@ class ComposeService:
     async def run(self, name: str, path: str, action: str) -> dict:
         if action not in ACTIONS:
             raise ConflictError(f"不支持的操作：{action}")
-        async with self._gate.hold(f"实例 {name}：docker compose {action}"):
-            return await self._execute(ACTIONS[action], path, self._timeouts[action])
+        return await self._execute(ACTIONS[action], path, self._timeouts[action])
 
     async def list_services(self, name: str, path: str) -> dict:
-        async with self._gate.hold(f"实例 {name}：读取 Compose 服务列表"):
-            result = await self._execute(
-                SERVICES_COMMAND,
-                path,
-                self._timeouts["services"],
-            )
+        result = await self._execute(
+            SERVICES_COMMAND,
+            path,
+            self._timeouts["services"],
+        )
         services = (
             [line.strip() for line in result["stdout"].splitlines() if line.strip()]
             if result["success"]
@@ -91,8 +86,7 @@ class ComposeService:
             str(LOG_TAIL_LINES),
             service,
         ]
-        async with self._gate.hold(f"实例 {name}：查看 {service} 日志"):
-            return await self._execute(cmd, path, self._timeouts["logs"])
+        return await self._execute(cmd, path, self._timeouts["logs"])
 
     async def _execute(self, cmd: list[str], cwd: str, timeout: int) -> dict:
         if self._console is not None:

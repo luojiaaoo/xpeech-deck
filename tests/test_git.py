@@ -257,11 +257,10 @@ def test_fetch_one_reports_failure(client, auth_headers, make_instance, timeout)
     assert response.json()["stderr"]
 
 
-async def test_git_operations_run_while_docker_gate_is_held(app, tmp_path):
+async def test_git_operations_run_concurrently(tmp_path):
     (tmp_path / ".git").mkdir()
 
     async def runner(cmd, cwd):
-        assert app.state.command_gate.busy
         if cmd[:3] == ["git", "rev-parse", "HEAD"]:
             return FakeProcess(stdout=f"{HEAD}\n".encode())
         if cmd[:2] == ["git", "log"]:
@@ -273,17 +272,16 @@ async def test_git_operations_run_while_docker_gate_is_held(app, tmp_path):
         return FakeProcess()
 
     service = GitService(runner=runner)
-    async with app.state.command_gate.hold("Docker"):
-        results = await asyncio.gather(
-            service.clone(tmp_path / "clone"),
-            service.fetch_all([("demo01", tmp_path)]),
-            service.versions("demo01", tmp_path),
-            service.switch("demo01", tmp_path, "refs/remotes/origin/main"),
-        )
-        assert results[0]["success"]
-        assert results[1][0]["success"]
-        assert results[2]["current_label"] == "origin/main"
-        assert results[3]["success"]
+    results = await asyncio.gather(
+        service.clone(tmp_path / "clone"),
+        service.fetch_all([("demo01", tmp_path)]),
+        service.versions("demo01", tmp_path),
+        service.switch("demo01", tmp_path, "refs/remotes/origin/main"),
+    )
+    assert results[0]["success"]
+    assert results[1][0]["success"]
+    assert results[2]["current_label"] == "origin/main"
+    assert results[3]["success"]
 
 
 async def test_real_repository_commit_branch_membership(tmp_path):

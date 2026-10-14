@@ -8,31 +8,23 @@ import type { ComposeResult } from './types'
 interface Props {
   open: boolean
   instanceName: string
-  blocked: boolean
-  onBusyChange: (busy: boolean) => void
   onClose: () => void
 }
 
 export default function DockerLogsModal({
   open,
   instanceName,
-  blocked,
-  onBusyChange,
   onClose,
 }: Props) {
   const [services, setServices] = useState<string[]>([])
   const [loading, setLoading] = useState(false)
-  const [viewing, setViewing] = useState<string | null>(null)
+  const [viewing, setViewing] = useState<string[]>([])
   const [result, setResult] = useState<ComposeResult | null>(null)
   const [resultService, setResultService] = useState<string | null>(null)
   const [resultOpen, setResultOpen] = useState(false)
 
   const loadServices = useCallback(async () => {
-    if (!instanceName || blocked) {
-      if (blocked) message.warning('当前有命令正在执行，请稍后重试')
-      return
-    }
-    onBusyChange(true)
+    if (!instanceName) return
     setLoading(true)
     try {
       const data = await api.listComposeServices(instanceName)
@@ -47,9 +39,8 @@ export default function DockerLogsModal({
       message.error(error instanceof Error ? error.message : String(error))
     } finally {
       setLoading(false)
-      onBusyChange(false)
     }
-  }, [blocked, instanceName, onBusyChange])
+  }, [instanceName])
 
   useEffect(() => {
     if (open) {
@@ -57,17 +48,10 @@ export default function DockerLogsModal({
       setResultOpen(false)
       void loadServices()
     }
-    // 弹窗打开或切换实例时读取一次，busy 状态变化不触发重复请求。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, instanceName])
+  }, [open, loadServices])
 
   const viewLogs = async (service: string) => {
-    if (blocked || loading || viewing !== null) {
-      message.warning('当前有命令正在执行，请稍后重试')
-      return
-    }
-    onBusyChange(true)
-    setViewing(service)
+    setViewing((current) => [...current, service])
     try {
       const data = await api.composeLogs(instanceName, service)
       setResult(data)
@@ -76,8 +60,7 @@ export default function DockerLogsModal({
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error))
     } finally {
-      setViewing(null)
-      onBusyChange(false)
+      setViewing((current) => current.filter((item) => item !== service))
     }
   }
 
@@ -93,7 +76,6 @@ export default function DockerLogsModal({
             key="refresh"
             icon={<ReloadOutlined />}
             loading={loading}
-            disabled={blocked || viewing !== null}
             onClick={() => void loadServices()}
           >
             刷新服务
@@ -111,8 +93,7 @@ export default function DockerLogsModal({
                 <Button
                   key={service}
                   icon={<FileTextOutlined />}
-                  loading={viewing === service}
-                  disabled={blocked || loading || (viewing !== null && viewing !== service)}
+                  loading={viewing.includes(service)}
                   onClick={() => void viewLogs(service)}
                 >
                   {service}

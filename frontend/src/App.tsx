@@ -37,21 +37,19 @@ export default function App() {
   const [publicLoading, setPublicLoading] = useState(true)
   const [instances, setInstances] = useState<Instance[]>([])
   const [loading, setLoading] = useState(false)
-  const [busy, setBusy] = useState<Busy | null>(null)
+  const [busy, setBusy] = useState<Busy[]>([])
   const [createOpen, setCreateOpen] = useState(false)
   const [configName, setConfigName] = useState<string | null>(null)
   const [result, setResult] = useState<ComposeResult | null>(null)
   const [resultOpen, setResultOpen] = useState(false)
+  const [resultTitle, setResultTitle] = useState('命令执行结果')
   const [imagesOpen, setImagesOpen] = useState(false)
   const [globalConfigOpen, setGlobalConfigOpen] = useState(false)
   const [skillsName, setSkillsName] = useState<string | null>(null)
   const [consoleOpen, setConsoleOpen] = useState(false)
   const [versionName, setVersionName] = useState<string | null>(null)
-  const [imageBusy, setImageBusy] = useState(false)
   const [logsName, setLogsName] = useState<string | null>(null)
-  const [logsBusy, setLogsBusy] = useState(false)
   const [fetchingVersions, setFetchingVersions] = useState(false)
-  const commandBusy = busy !== null || imageBusy || logsBusy
 
   // 从 URL 查询参数读取 Token，只保存在内存中，并清除地址栏
   useEffect(() => {
@@ -178,28 +176,22 @@ export default function App() {
   }
 
   const runCommand = async (instance: Instance, action: Action) => {
-    if (commandBusy) {
-      message.warning('当前有命令正在执行，请稍后重试')
-      return
-    }
-    setBusy({ name: instance.name, action })
+    const command = { name: instance.name, action }
+    setBusy((current) => [...current, command])
     try {
       const r = await api.compose(instance.name, action)
       setResult(r)
+      setResultTitle(`${instance.name}：docker compose ${action}`)
       setResultOpen(true)
     } catch (e) {
       showError(e)
     } finally {
-      setBusy(null)
+      setBusy((current) => current.filter((item) => item !== command))
     }
   }
 
   const handleCommand = (instance: Instance, action: Action) => {
     if (action === 'logs') {
-      if (commandBusy) {
-        message.warning('当前有命令正在执行，请稍后重试')
-        return
-      }
       setLogsName(instance.name)
       return
     }
@@ -335,7 +327,6 @@ export default function App() {
           <Button
             style={{ marginRight: 12 }}
             icon={<CloudDownloadOutlined />}
-            disabled={commandBusy}
             onClick={() => setImagesOpen(true)}
           >
             拉取镜像
@@ -353,7 +344,6 @@ export default function App() {
           instances={instances}
           loading={loading}
           busy={busy}
-          commandBusy={commandBusy}
           onConfig={(name) => setConfigName(name)}
           onSkills={(name) => setSkillsName(name)}
           onVersion={(name) => setVersionName(name)}
@@ -377,7 +367,7 @@ export default function App() {
         onCancel={() => setVersionName(null)}
         onSwitched={() => setVersionName(null)}
       />
-      <CommandResultModal open={resultOpen} result={result} onClose={() => setResultOpen(false)} />
+      <CommandResultModal open={resultOpen} result={result} title={resultTitle} onClose={() => setResultOpen(false)} />
       <SkillManagementModal
         open={skillsName !== null}
         instanceName={skillsName ?? ''}
@@ -386,8 +376,6 @@ export default function App() {
       />
       <PullImagesModal
         open={imagesOpen}
-        blocked={busy !== null || logsBusy}
-        onBusyChange={setImageBusy}
         onClose={() => setImagesOpen(false)}
       />
       <GlobalConfigModal
@@ -398,8 +386,6 @@ export default function App() {
       <DockerLogsModal
         open={logsName !== null}
         instanceName={logsName ?? ''}
-        blocked={busy !== null || imageBusy}
-        onBusyChange={setLogsBusy}
         onClose={() => setLogsName(null)}
       />
       <SystemConsoleModal open={consoleOpen} onClose={() => setConsoleOpen(false)} />

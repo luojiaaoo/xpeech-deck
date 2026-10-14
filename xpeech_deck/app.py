@@ -22,7 +22,6 @@ from fastapi.staticfiles import StaticFiles
 from .auth import require_token
 from .compose_service import ComposeService
 from .console_service import ConsoleBroker
-from .command_gate import CommandGate
 from .config import DEFAULT_CONSOLE_LOG_PATH, Settings
 from .errors import DeckError, NotFoundError, ValidationError
 from .global_config_service import read_redirect_mappings, save_redirect_mappings
@@ -110,9 +109,8 @@ def create_app(settings: Settings) -> FastAPI:
         or DEFAULT_CONSOLE_LOG_PATH
     )
     app.state.console = ConsoleBroker(log_path=console_log_path)
-    app.state.command_gate = CommandGate()
-    app.state.compose = ComposeService(console=app.state.console, gate=app.state.command_gate)
-    app.state.images = ImageService(console=app.state.console, gate=app.state.command_gate)
+    app.state.compose = ComposeService(console=app.state.console)
+    app.state.images = ImageService(console=app.state.console)
     app.state.git = GitService(console=app.state.console)
 
     @app.exception_handler(DeckError)

@@ -136,23 +136,30 @@ async def test_timeout_kills_process():
         await svc.run("demo01", "/instances/demo01", "stop")
 
 
-async def test_concurrent_same_instance_409():
+async def test_concurrent_same_instance_commands_run_independently():
     entered = asyncio.Event()
     release = asyncio.Event()
+    calls = 0
 
     async def runner(cmd, cwd):
-        entered.set()
-        return FakeProcess(hang=True, release=release)
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            entered.set()
+            return FakeProcess(hang=True, release=release)
+        return FakeProcess(stdout=b"second command completed\n")
 
     svc = ComposeService(runner=runner)
     first = asyncio.create_task(svc.run("demo01", "/instances/demo01", "up"))
     await entered.wait()
 
-    with pytest.raises(ConflictError):
-        await svc.run("demo01", "/instances/demo01", "up")
-
-    release.set()
-    result = await first
+    try:
+        second = await asyncio.wait_for(svc.run("demo01", "/instances/demo01", "up"), 1)
+        assert second["stdout"] == "second command completed\n"
+        assert not first.done()
+    finally:
+        release.set()
+        result = await first
     assert result["exit_code"] == 0  # 未被 kill，正常结束
 
 

@@ -402,6 +402,58 @@
   margin-top: 10px;
 }
 
+.version-cascader-popup .ant-cascader-menus {
+  width: 100%;
+}
+
+.version-cascader-popup .ant-cascader-menu {
+  flex: 1 1 0;
+  min-width: 0;
+  height: 360px;
+  max-height: 50vh;
+}
+
+.version-cascader-popup .ant-cascader-menu:first-child:not(:last-child) {
+  flex: 0 0 176px;
+  max-width: 38%;
+}
+
+.version-cascader-popup .ant-cascader-menu-item-content {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.version-option-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-option-summary .ant-tag {
+  flex-shrink: 0;
+  margin-inline-end: 0;
+}
+
+.version-option-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.version-option-commit {
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.version-option-date {
+  display: block;
+  font-size: 12px;
+  font-weight: normal;
+}
+
 .system-console {
   height: 520px;
   overflow: auto;

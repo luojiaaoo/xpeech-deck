@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
-import { Alert, Button, Form, Modal, Select, Space, Spin, Tag, Typography, message } from 'antd'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Alert, Button, Cascader, Form, Modal, Space, Spin, Tag, Typography, message } from 'antd'
 import { CloudDownloadOutlined } from '@ant-design/icons'
 import * as api from './api'
-import type { InstanceVersions } from './types'
+import type { GitVersion, InstanceVersions } from './types'
 
 interface Props {
   open: boolean
@@ -11,9 +11,52 @@ interface Props {
   onSwitched: () => void
 }
 
+interface VersionOption {
+  value: string
+  label: string
+  version?: GitVersion
+  children?: VersionOption[]
+}
+
+function buildVersionOptions(versions: GitVersion[]): VersionOption[] {
+  const branches = versions.filter((item) => item.kind === 'branch')
+  const branchNames = new Set(branches.map((item) => item.label))
+  const leaf = (version: GitVersion): VersionOption => ({
+    value: version.ref,
+    label: `${version.kind === 'branch' ? '分支最新版本' : version.label} ${version.commit}`,
+    version,
+  })
+  const groups: VersionOption[] = branches.map((branch) => ({
+    value: branch.ref,
+    label: branch.label,
+    children: [
+      leaf(branch),
+      ...versions
+        .filter((item) => item.kind !== 'branch' && item.branches.includes(branch.label))
+        .map(leaf),
+    ],
+  }))
+  const unassigned = versions.filter(
+    (item) => item.kind !== 'branch' && !item.branches.some((name) => branchNames.has(name)),
+  )
+  if (unassigned.length) {
+    groups.push({ value: '__unassigned__', label: '无远程分支', children: unassigned.map(leaf) })
+  }
+  return groups
+}
+
+function findVersionPath(options: VersionOption[], ref?: string, preferredGroup?: string): string[] | undefined {
+  const group = options.find(
+    (item) => item.value === preferredGroup && item.children?.some((child) => child.value === ref),
+  ) ?? options.find((item) => item.children?.some((child) => child.value === ref))
+  return group && ref ? [group.value, ref] : undefined
+}
+
 export default function VersionInstanceModal({ open, instanceName, onCancel, onSwitched }: Props) {
   const [data, setData] = useState<InstanceVersions | null>(null)
-  const [selectedRef, setSelectedRef] = useState<string>()
+  const [selectedPath, setSelectedPath] = useState<string[]>()
+  const selectedRef = selectedPath?.[1]
+  const versionOptions = useMemo(() => buildVersionOptions(data?.versions ?? []), [data])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [fetching, setFetching] = useState(false)
@@ -27,15 +70,13 @@ export default function VersionInstanceModal({ open, instanceName, onCancel, onS
     setSubmitting(false)
     setLoading(true)
     setData(null)
-    setSelectedRef(undefined)
+    setSelectedPath(undefined)
     api
       .getVersions(instanceName)
       .then((value) => {
         if (!active) return
         setData(value)
-        if (value.versions.some((item) => item.ref === value.current_ref)) {
-          setSelectedRef(value.current_ref)
-        }
+        setSelectedPath(findVersionPath(buildVersionOptions(value.versions), value.current_ref))
       })
       .catch((error: unknown) => {
         if (active) message.error(String(error instanceof Error ? error.message : error))
@@ -60,8 +101,8 @@ export default function VersionInstanceModal({ open, instanceName, onCancel, onS
       const value = await api.getVersions(instanceName)
       if (requestSession !== session.current) return
       setData(value)
-      setSelectedRef((previous) =>
-        value.versions.some((item) => item.ref === previous) ? previous : undefined,
+      setSelectedPath((previous) =>
+        findVersionPath(buildVersionOptions(value.versions), previous?.[1], previous?.[0]),
       )
       message.success('最新版本已拉取，可选择目标版本进行切换')
     } catch (error) {
@@ -142,39 +183,42 @@ export default function VersionInstanceModal({ open, instanceName, onCancel, onS
           />
           <Form layout="vertical">
             <Form.Item label="目标版本" required>
-              <Select
+              <Cascader<VersionOption>
                 style={{ width: '100%' }}
-                disabled={fetching || submitting}
-                value={selectedRef}
-                onChange={setSelectedRef}
-                placeholder="选择分支、标签或最近 20 次提交"
-                showSearch
-                optionFilterProp="label"
-                options={(data?.versions ?? []).map((item) => ({
-                  value: item.ref,
-                  label: `${item.label} ${item.branches.length ? `[${item.branches.join(', ')}] ` : ''}${item.commit}`,
-                  title: `${item.label} ${item.branches.join(', ')} ${item.commit}`,
-                  kind: item.kind,
-                }))}
+                disabled={loading || fetching || submitting}
+                value={selectedPath}
+                onChange={(path) => setSelectedPath(path.length === 2 ? path : undefined)}
+                placeholder="先选择分支，再选择具体版本"
+                options={versionOptions}
+                classNames={{ popup: { root: 'version-cascader-popup' } }}
+                styles={{ popup: { root: { width: 560, maxWidth: 'calc(100vw - 32px)', minWidth: 0 } } }}
+                showSearch={{
+                  filter: (input, path) => path.some((option) =>
+                    `${option.label} ${option.version?.kind ?? ''}`.toLowerCase().includes(input.toLowerCase()),
+                  ),
+                  limit: false,
+                  matchInputWidth: false,
+                }}
                 optionRender={(option) => {
-                  const item = data?.versions.find((value) => value.ref === option.value)
+                  const item = option.version
                   return item ? (
-                    <Space wrap>
-                      <Tag color={kindColor(item.kind)}>{kindLabel(item.kind)}</Tag>
-                      <span>{item.label}</span>
-                      {item.kind !== 'branch' && (
-                        item.branches.length ? item.branches.map((branch) => (
-                          <Tag key={branch} color="blue">{branch}</Tag>
-                        )) : <Typography.Text type="secondary">无远程分支</Typography.Text>
-                      )}
-                      <Typography.Text type="secondary">{item.commit}</Typography.Text>
+                    <div className="version-option" title={`${item.label} · ${item.commit}`}>
+                      <div className="version-option-summary">
+                        <Tag color={kindColor(item.kind)}>{kindLabel(item.kind)}</Tag>
+                        <span className="version-option-label">
+                          {item.kind === 'branch' ? '分支最新版本' : item.label}
+                        </span>
+                        <Typography.Text type="secondary" className="version-option-commit mono">
+                          {item.commit}
+                        </Typography.Text>
+                      </div>
                       {item.committed_at ? (
-                        <Typography.Text type="secondary">
+                        <Typography.Text type="secondary" className="version-option-date">
                           {new Date(item.committed_at).toLocaleString()}
                         </Typography.Text>
                       ) : null}
-                    </Space>
-                  ) : null
+                    </div>
+                  ) : option.label
                 }}
                 notFoundContent={loading ? <Spin size="small" /> : '没有可用版本'}
               />

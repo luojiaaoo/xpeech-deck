@@ -37,8 +37,7 @@ const ACTIONS: ActionDef[] = [
 interface Props {
   instances: Instance[]
   loading: boolean
-  busy: { name: string; action: Action } | null
-  commandBusy: boolean
+  busy: { name: string; action: Action }[]
   onConfig: (name: string) => void
   onSkills: (name: string) => void
   onVersion: (name: string) => void
@@ -49,7 +48,6 @@ export default function InstanceTable({
   instances,
   loading,
   busy,
-  commandBusy,
   onConfig,
   onSkills,
   onVersion,
@@ -93,7 +91,6 @@ export default function InstanceTable({
       render: (_, record) => (
         <Button
           icon={<AppstoreOutlined />}
-          disabled={commandBusy}
           onClick={() => onSkills(record.name)}
         >
           技能管理
@@ -114,7 +111,7 @@ export default function InstanceTable({
       title: '操作',
       key: 'actions',
       render: (_, record) => {
-        const rowBusy = busy && busy.name === record.name ? busy : null
+        const rowBusy = busy.filter((item) => item.name === record.name)
         return (
           <Space wrap>
             {ACTIONS.map((a) => (
@@ -125,8 +122,7 @@ export default function InstanceTable({
                 <Button
                   danger={a.danger}
                   icon={a.icon}
-                  loading={rowBusy?.action === a.key}
-                  disabled={commandBusy}
+                  loading={rowBusy.some((item) => item.action === a.key)}
                   onClick={() => onCommand(record, a.key)}
                 >
                   {a.label}

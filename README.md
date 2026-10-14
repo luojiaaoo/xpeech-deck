@@ -166,9 +166,9 @@ https://deck.example.com:<实例 Web 端口>?state=xxx&oauth2provider=feishu
 
 - 使用 Token 打开网页后，平台会立即对全部实例执行一次 `git fetch --depth=20 --all --prune --tags`，此后每 60 秒重复一次；
 - 点击顶部「拉取最新版本」可主动 fetch 全部实例；版本弹窗内的同名按钮只拉取当前实例，并刷新可选版本，不自动切换工作目录；
-- 点击实例行内的「切换」，可选择 Gitee 远程分支、标签或最近 20 次提交；下拉列表显示包含该提交的远程分支名，并支持按分支名搜索；
+- 点击实例行内的「切换」，通过「分支 → 具体版本」两级下拉选择：一级为 Gitee 远程分支，二级包含分支最新版本、所属标签和最近 20 次提交中属于该分支的提交；共享版本会出现在各所属分支下，无远程分支归属的版本单独归组，支持搜索分支名、标签、提交说明和提交哈希；
 - 切换时执行 `git reset --hard <ref>`，已跟踪文件的本地修改会被覆盖，但平台生成且未被 Git 跟踪的 `.env` / `conf.toml` 不受影响；
-- Git 克隆、fetch、版本读取与切换不使用平台级互斥锁，可与 Compose/镜像命令同时执行。
+- Git 克隆、fetch、版本读取与切换允许并发，可与 Compose/镜像命令同时执行。
 
 ### 配置实例
 
@@ -202,7 +202,7 @@ https://deck.example.com:<实例 Web 端口>?state=xxx&oauth2provider=feishu
 | 日志 | `docker compose logs -n 500 <服务名>` | 30 秒 |
 
 - 命令在实例目录中执行，参数以列表传递（禁止 Shell 拼接）；
-- Compose 和镜像操作共用平台级互斥锁，同一时间只允许运行一个 Docker 受管命令；重复请求立即返回 409，不排队。Git 操作不参与此锁；
+- Compose、日志读取、镜像检查和拉取均不加互斥锁，同实例及不同实例的请求可并发执行，不会因其他命令正在运行而返回 409；前端仅对正在执行的按钮显示加载状态，其他操作仍可使用；
 - 超时后终止命令并返回「命令执行超时」；
 - 结束后弹窗展示退出码、stdout、stderr，成功/失败分别以绿色/红色提示，内容支持复制；
 - `Down` 有确认提示，只下线容器，不删除实例目录和数据；
@@ -233,7 +233,7 @@ https://deck.example.com:<实例 Web 端口>?state=xxx&oauth2provider=feishu
 uv run pytest
 ```
 
-覆盖：认证、公开实例接口、OAuth2 根路径重定向、全局映射配置、Git 克隆/fetch/版本切换、实例列表、配置编辑（端口/TOML 校验）、Compose 命令参数/超时/互斥、镜像状态检查与拉取、系统控制台缓存与流式输出。
+覆盖：认证、公开实例接口、OAuth2 根路径重定向、全局映射配置、Git 克隆/fetch/版本切换、实例列表、配置编辑（端口/TOML 校验）、Compose 命令参数/超时/并发、镜像状态检查与拉取、系统控制台缓存与流式输出。
 
 ### 前端开发
 
@@ -261,7 +261,7 @@ xpeech-deck/
 │   ├── auth.py                 # URL Token 认证
 │   ├── instance_service.py     # 实例发现/创建/配置
 │   ├── git_service.py          # Git 克隆/fetch/版本切换
-│   ├── compose_service.py      # Compose 执行器（超时+互斥）
+│   ├── compose_service.py      # Compose 执行器（超时+并发）
 │   ├── image_service.py        # 镜像检查与拉取
 │   ├── skill_service.py        # 自定义内置技能安全安装与管理
 │   ├── console_service.py      # 系统控制台事件缓存与广播
@@ -287,6 +287,6 @@ xpeech-deck/
 
 ## 注意事项
 
-- 以单进程方式运行（默认 `uvicorn.run` 无多 worker），保证平台级命令互斥生效；
+- 默认以单进程方式运行（`uvicorn.run` 无多 worker）；
 - 端口占用冲突不主动检测，由 `docker compose` 报错并展示给用户；
 - 实例目录不提供删除功能。
