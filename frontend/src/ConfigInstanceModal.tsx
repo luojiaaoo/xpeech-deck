@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Form, Input, Modal, Spin, message } from 'antd'
+import { Input, Modal, Spin, Tabs, message } from 'antd'
 import * as api from './api'
 
 interface Props {
@@ -12,31 +12,43 @@ interface Props {
 export default function ConfigInstanceModal({ open, instanceName, onCancel, onSaved }: Props) {
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [backendPort, setBackendPort] = useState('')
-  const [webClientPort, setWebClientPort] = useState('')
+  const [loaded, setLoaded] = useState(false)
+  const [envContent, setEnvContent] = useState('')
   const [confToml, setConfToml] = useState('')
 
   // 打开时读取实例配置原文
   useEffect(() => {
     if (!open || !instanceName) return
+    let active = true
     setLoading(true)
+    setLoaded(false)
+    setEnvContent('')
+    setConfToml('')
     api
       .getConfig(instanceName)
       .then((c) => {
-        setBackendPort(String(c.backend_port))
-        setWebClientPort(String(c.web_client_port))
+        if (!active) return
+        setEnvContent(c.env_content)
         setConfToml(c.conf_toml)
+        setLoaded(true)
       })
-      .catch((e) => message.error(String(e instanceof Error ? e.message : e)))
-      .finally(() => setLoading(false))
+      .catch((e) => {
+        if (active) message.error(String(e instanceof Error ? e.message : e))
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+    return () => {
+      active = false
+    }
   }, [open, instanceName])
 
   const handleSave = async () => {
+    if (!loaded || loading || saving) return
     setSaving(true)
     try {
       await api.saveConfig(instanceName, {
-        backend_port: backendPort.trim(),
-        web_client_port: webClientPort.trim(),
+        env_content: envContent,
         conf_toml: confToml,
       })
       message.success('配置已保存')
@@ -52,34 +64,43 @@ export default function ConfigInstanceModal({ open, instanceName, onCancel, onSa
     <Modal
       title={`配置实例：${instanceName}`}
       open={open}
-      onCancel={onCancel}
+      onCancel={() => !saving && onCancel()}
       onOk={() => void handleSave()}
       confirmLoading={saving}
+      okButtonProps={{ disabled: loading || !loaded }}
+      cancelButtonProps={{ disabled: saving }}
       okText="保存"
       cancelText="取消"
-      width={720}
+      width={960}
     >
       <Spin spinning={loading}>
-        <Form layout="vertical">
-          <Form.Item label="实例名">
-            <Input value={instanceName} disabled />
-          </Form.Item>
-          <Form.Item label="Backend 端口">
-            <Input value={backendPort} onChange={(e) => setBackendPort(e.target.value)} />
-          </Form.Item>
-          <Form.Item label="Web Client 端口">
-            <Input value={webClientPort} onChange={(e) => setWebClientPort(e.target.value)} />
-          </Form.Item>
-          <Form.Item label="conf.toml">
-            <Input.TextArea
-              className="mono"
-              value={confToml}
-              onChange={(e) => setConfToml(e.target.value)}
-              rows={18}
-              spellCheck={false}
-            />
-          </Form.Item>
-        </Form>
+        <Tabs
+          defaultActiveKey="conf.toml"
+          items={[
+            { key: 'conf.toml', label: 'conf.toml', children: (
+              <Input.TextArea
+                aria-label="conf.toml"
+                className="mono"
+                value={confToml}
+                onChange={(e) => setConfToml(e.target.value)}
+                rows={24}
+                spellCheck={false}
+                disabled={!loaded || saving}
+              />
+            ) },
+            { key: '.env', label: '.env', children: (
+              <Input.TextArea
+                aria-label=".env"
+                className="mono"
+                value={envContent}
+                onChange={(e) => setEnvContent(e.target.value)}
+                rows={24}
+                spellCheck={false}
+                disabled={!loaded || saving}
+              />
+            ) },
+          ]}
+        />
       </Spin>
     </Modal>
   )

@@ -61,18 +61,9 @@ export default function InstanceTable({
       sorter: (left, right) => left.name.localeCompare(right.name, undefined, { numeric: true }),
     },
     {
-      title: 'Backend 端口',
-      dataIndex: 'backend_port',
-      key: 'backend_port',
-      width: 130,
-      sorter: (left, right) => left.backend_port - right.backend_port,
-    },
-    {
-      title: 'Web 端口',
-      dataIndex: 'web_client_port',
-      key: 'web_client_port',
-      width: 110,
-      sorter: (left, right) => left.web_client_port - right.web_client_port,
+      title: '端口',
+      key: 'ports',
+      render: (_, record) => record.ports.join(', ') || '-',
     },
     {
       title: '版本',

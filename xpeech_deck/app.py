@@ -26,7 +26,6 @@ from .config import DEFAULT_CONSOLE_LOG_PATH, Settings
 from .errors import DeckError, NotFoundError, ValidationError
 from .global_config_service import read_redirect_mappings, save_redirect_mappings
 from .git_service import GitService
-from .image_service import ImageService
 from .instance_service import (
     _recognize_instance,
     create_instance,
@@ -61,9 +60,6 @@ from .schemas import (
     RedirectMappingOut,
     SaveGlobalConfigIn,
     MigrateSkillIn,
-    ImageListOut,
-    ImagePullOut,
-    ImageStatusOut,
     GitFetchAllOut,
     GitFetchResultOut,
     InstanceVersionsOut,
@@ -110,7 +106,6 @@ def create_app(settings: Settings) -> FastAPI:
     )
     app.state.console = ConsoleBroker(log_path=console_log_path)
     app.state.compose = ComposeService(console=app.state.console)
-    app.state.images = ImageService(console=app.state.console)
     app.state.git = GitService(console=app.state.console)
 
     @app.exception_handler(DeckError)
@@ -231,26 +226,6 @@ def create_app(settings: Settings) -> FastAPI:
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    # ---------- Docker 镜像 ----------
-
-    @app.get(
-        "/api/images",
-        dependencies=[Depends(require_token)],
-        response_model=ImageListOut,
-    )
-    async def get_images():
-        images = await app.state.images.list_statuses()
-        return ImageListOut(images=[ImageStatusOut(**image) for image in images])
-
-    @app.post(
-        "/api/images/{key}/pull",
-        dependencies=[Depends(require_token)],
-        response_model=ImagePullOut,
-    )
-    async def pull_image(key: str):
-        result = await app.state.images.pull(key)
-        return ImagePullOut(**result)
-
     # ---------- 实例管理 ----------
 
     @app.get(
@@ -331,8 +306,7 @@ def create_app(settings: Settings) -> FastAPI:
         save_instance_config(
             settings.root_path,
             name,
-            body.backend_port,
-            body.web_client_port,
+            body.env_content,
             body.conf_toml,
         )
         return SuccessOut(success=True)

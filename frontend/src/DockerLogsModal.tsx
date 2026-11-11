@@ -50,13 +50,13 @@ export default function DockerLogsModal({
     }
   }, [open, loadServices])
 
-  const viewLogs = async (service: string) => {
+  const viewLogs = async (service: string, showResult = true) => {
     setViewing((current) => [...current, service])
     try {
       const data = await api.composeLogs(instanceName, service)
       setResult(data)
       setResultService(service)
-      setResultOpen(true)
+      if (showResult) setResultOpen(true)
     } catch (error) {
       message.error(error instanceof Error ? error.message : String(error))
     } finally {
@@ -110,6 +110,8 @@ export default function DockerLogsModal({
         result={result}
         title={`${resultService ?? ''} 日志（最近 500 行）`}
         width={1280}
+        onRefresh={resultService ? () => void viewLogs(resultService, false) : undefined}
+        refreshing={resultService !== null && viewing.includes(resultService)}
         onClose={() => setResultOpen(false)}
       />
     </>

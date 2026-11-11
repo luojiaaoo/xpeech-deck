@@ -28,7 +28,7 @@ def validate_name(name: str) -> str:
 
 
 def parse_dotenv(text: str) -> dict[str, str]:
-    """解析 .env 文本，忽略空行与注释行。"""
+    """解析 .env 值，支持 export、引号和行尾注释，不展开变量。"""
     result: dict[str, str] = {}
     for line in text.splitlines():
         line = line.strip()
@@ -37,12 +37,19 @@ def parse_dotenv(text: str) -> dict[str, str]:
         key, sep, value = line.partition("=")
         if not sep:
             continue
-        result[key.strip()] = value.strip()
+        key = re.sub(r"^export\s+", "", key.strip())
+        value = value.strip()
+        quoted = re.fullmatch(r"(['\"])(.*?)\1(?:\s+#.*)?", value)
+        if quoted:
+            value = quoted.group(2)
+        else:
+            value = re.split(r"\s+#", value, maxsplit=1)[0].rstrip()
+        result[key] = value
     return result
 
 
 def build_dotenv(name: str, backend_port: int, web_client_port: int) -> str:
-    """生成实例 .env 全文：平台完全生成和维护，用户不可直接编辑。"""
+    """仅在创建实例时生成默认 .env，后续由用户直接编辑。"""
     return (
         f"COMPOSE_PROJECT_NAME={name}\n"
         f"BACKEND_PORT={backend_port}\n"
@@ -56,24 +63,6 @@ def _int_or(env: dict[str, str], key: str, default: int) -> int:
         return int(env[key])
     except (KeyError, ValueError):
         return default
-
-
-def _parse_port(value: object) -> int:
-    """端口基础校验：必须为整数且在 1–65535 之间。"""
-    if isinstance(value, bool):
-        raise ValidationError("端口必须为整数")
-    if isinstance(value, int):
-        port = value
-    elif isinstance(value, str):
-        text = value.strip()
-        if not text.isdigit():
-            raise ValidationError("端口必须为整数")
-        port = int(text)
-    else:
-        raise ValidationError("端口必须为整数")
-    if not 1 <= port <= 65535:
-        raise ValidationError("端口必须在 1–65535 之间")
-    return port
 
 
 def _recognize_instance(root_path: Path, name: str) -> Path:
@@ -120,6 +109,7 @@ def list_instances(root_path: Path) -> list[dict]:
                 "name": child.name,
                 "backend_port": _int_or(env, "BACKEND_PORT", DEFAULT_BACKEND_PORT),
                 "web_client_port": _int_or(env, "WEB_CLIENT_PORT", DEFAULT_WEB_CLIENT_PORT),
+                "ports": [value for key, value in env.items() if key.endswith("_PORT") and value],
                 "path": str(child),
             }
         )
@@ -175,23 +165,23 @@ async def create_instance(
         "name": name,
         "backend_port": backend_port,
         "web_client_port": web_client_port,
+        "ports": [str(backend_port), str(web_client_port)],
         "path": str(target),
     }
 
 
 def read_instance_config(root_path: Path, name: str) -> dict:
-    """读取实例端口与 conf.toml 原文。"""
+    """读取 .env 与 conf.toml 原文，保留注释、空行和换行格式。"""
     path = _recognize_instance(root_path, name)
     try:
-        env = parse_dotenv((path / ".env").read_text(encoding="utf-8"))
+        env_content = (path / ".env").read_bytes().decode("utf-8")
+        conf_file = path / "conf.toml"
+        conf_toml = conf_file.read_bytes().decode("utf-8") if conf_file.is_file() else ""
     except OSError as exc:
         raise FileOperationError(f"读取实例 {name} 配置失败：{exc}") from exc
-    conf_file = path / "conf.toml"
-    conf_toml = conf_file.read_text(encoding="utf-8") if conf_file.is_file() else ""
     return {
         "name": name,
-        "backend_port": _int_or(env, "BACKEND_PORT", DEFAULT_BACKEND_PORT),
-        "web_client_port": _int_or(env, "WEB_CLIENT_PORT", DEFAULT_WEB_CLIENT_PORT),
+        "env_content": env_content,
         "conf_toml": conf_toml,
     }
 
@@ -199,17 +189,14 @@ def read_instance_config(root_path: Path, name: str) -> dict:
 def save_instance_config(
     root_path: Path,
     name: str,
-    backend_port: object,
-    web_client_port: object,
+    env_content: str,
     conf_toml: str,
 ) -> None:
     """保存实例配置：先完整校验，全部通过后才写文件，失败不覆盖原配置。"""
     path = _recognize_instance(root_path, name)
 
-    bp = _parse_port(backend_port)
-    wp = _parse_port(web_client_port)
-    if bp == wp:
-        raise ValidationError("Backend 和 Web Client 端口不能相同")
+    if not parse_dotenv(env_content).get("COMPOSE_PROJECT_NAME"):
+        raise ValidationError(".env 必须保留非空的 COMPOSE_PROJECT_NAME，以便识别实例")
 
     try:
         tomllib.loads(conf_toml)
@@ -218,7 +205,10 @@ def save_instance_config(
         raise ValidationError(f"conf.toml 语法错误：{exc}") from exc
 
     try:
-        (path / ".env").write_text(build_dotenv(name, bp, wp), encoding="utf-8")
-        (path / "conf.toml").write_text(conf_toml, encoding="utf-8")
+        for filename, content in ((".env", env_content), ("conf.toml", conf_toml)):
+            config_file = path / filename
+            encoded = content.encode("utf-8")
+            if not config_file.is_file() or config_file.read_bytes() != encoded:
+                config_file.write_bytes(encoded)
     except OSError as exc:
         raise FileOperationError(f"保存实例 {name} 配置失败：{exc}") from exc

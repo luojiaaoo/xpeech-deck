@@ -3,8 +3,6 @@ import type {
   ComposeServicesResult,
   ConsoleEvent,
   GitFetchResult,
-  ImagePullResult,
-  ImageStatus,
   Instance,
   InstanceConfig,
   InstanceVersions,
@@ -124,7 +122,7 @@ export function getConfig(name: string): Promise<InstanceConfig> {
 
 export function saveConfig(
   name: string,
-  data: { backend_port: number | string; web_client_port: number | string; conf_toml: string },
+  data: { env_content: string; conf_toml: string },
 ): Promise<{ success: boolean }> {
   return request(`/api/instances/${encodeURIComponent(name)}/config`, {
     method: 'PUT',
@@ -216,14 +214,6 @@ export function composeLogs(name: string, service: string): Promise<ComposeResul
   return request(
     `/api/instances/${encodeURIComponent(name)}/compose/logs/${encodeURIComponent(service)}`,
   )
-}
-
-export function listImages(): Promise<{ images: ImageStatus[] }> {
-  return request('/api/images')
-}
-
-export function pullImage(key: string): Promise<ImagePullResult> {
-  return request(`/api/images/${encodeURIComponent(key)}/pull`, { method: 'POST' })
 }
 
 export async function streamConsole(

@@ -51,7 +51,7 @@ export default function GlobalConfigModal({ open, instances, onClose }: Props) {
 
   const instanceOptions = useMemo(() => {
     const options = instances.map((instance) => ({
-      label: `${instance.name}（Web ${instance.web_client_port}）`,
+      label: instance.name,
       value: instance.name,
     }))
     const known = new Set(instances.map((instance) => instance.name))

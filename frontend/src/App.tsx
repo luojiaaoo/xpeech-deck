@@ -16,7 +16,6 @@ import ConfigInstanceModal from './ConfigInstanceModal'
 import CommandResultModal from './CommandResultModal'
 import DockerLogsModal from './DockerLogsModal'
 import GlobalConfigModal from './GlobalConfigModal'
-import PullImagesModal from './PullImagesModal'
 import SkillManagementModal from './SkillManagementModal'
 import SystemConsoleModal from './SystemConsoleModal'
 import VersionInstanceModal from './VersionInstanceModal'
@@ -43,7 +42,6 @@ export default function App() {
   const [result, setResult] = useState<ComposeResult | null>(null)
   const [resultOpen, setResultOpen] = useState(false)
   const [resultTitle, setResultTitle] = useState('命令执行结果')
-  const [imagesOpen, setImagesOpen] = useState(false)
   const [globalConfigOpen, setGlobalConfigOpen] = useState(false)
   const [skillsName, setSkillsName] = useState<string | null>(null)
   const [consoleOpen, setConsoleOpen] = useState(false)
@@ -264,11 +262,6 @@ export default function App() {
                         {instance.name}
                       </Typography.Title>
                       <div className="instance-card-rule" />
-                      <div className="instance-card-port">
-                        <span className="instance-card-status" />
-                        <span>Web 端口</span>
-                        <code>{instance.web_client_port}</code>
-                      </div>
                     </Card>
                   ))}
                 </div>
@@ -324,13 +317,6 @@ export default function App() {
           >
             全局配置
           </Button>
-          <Button
-            style={{ marginRight: 12 }}
-            icon={<CloudDownloadOutlined />}
-            onClick={() => setImagesOpen(true)}
-          >
-            拉取镜像
-          </Button>
           <Button style={{ marginRight: 12 }} icon={<CodeOutlined />} onClick={() => setConsoleOpen(true)}>
             Console
           </Button>
@@ -373,10 +359,6 @@ export default function App() {
         instanceName={skillsName ?? ''}
         instanceNames={instances.map((instance) => instance.name)}
         onClose={() => setSkillsName(null)}
-      />
-      <PullImagesModal
-        open={imagesOpen}
-        onClose={() => setImagesOpen(false)}
       />
       <GlobalConfigModal
         open={globalConfigOpen}

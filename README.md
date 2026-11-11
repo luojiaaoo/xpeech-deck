@@ -4,9 +4,8 @@ Xpeech 简易多实例管理平台：在指定目录中克隆并管理多个 [Xp
 
 - 每个实例直接从 Gitee 克隆一份独立 Xpeech Git 工作树
 - 自动 fetch 全部实例，可在远程分支与标签之间切换版本
-- 在线配置 Backend / Web Client 端口与 `conf.toml`
+- 在线编辑 `conf.toml` 与 `.env` 文件全文
 - 执行常用 Docker Compose 命令（Up / Start / Stop / Restart / Down / PS / Logs）
-- 查看并拉取 Xpeech 构建基础镜像与 Browserless 镜像
 - 通过 System Console 实时查看平台执行的 Docker 命令与响应
 - 通过 `redirect_to` 映射将 OAuth2 回调转发到指定实例
 - 无 Token 时展示可直接访问的实例入口卡片
@@ -122,7 +121,7 @@ GET /api/public/redis/oauth2context/<state>
 
 成功时以 `text/plain` 直接返回存储值（如 `serialized-context`）；键不存在或已过期时返回 404。Redis 连接通过 `conf.toml` 中的 `redis_url` 和 `redis_password` 配置，内部 key 前缀无需配置。
 
-不带 Token 访问根路径时，页面展示系统名称与实例卡片；卡片只包含实例名和 Web 端口，点击后在新标签页打开对应 Web 界面。没有实例时仅显示「暂无实例」。
+不带 Token 访问根路径时，页面展示系统名称与实例卡片；卡片显示实例名，点击后在新标签页打开对应 Web 界面。管理实例列表中的「端口」列读取 `.env` 中所有名称以 `_PORT` 结尾的非空变量值，按文件中的顺序以逗号分隔显示；卡片与全局配置选项不显示端口。没有实例时仅显示「暂无实例」。
 
 ### OAuth2 回调重定向与全局配置
 
@@ -168,13 +167,14 @@ https://deck.example.com:<实例 Web 端口>?state=xxx&oauth2provider=feishu
 - 点击顶部「拉取最新版本」可主动 fetch 全部实例；版本弹窗内的同名按钮只拉取当前实例，并刷新可选版本，不自动切换工作目录；
 - 点击实例行内的「切换」，通过「分支 → 具体版本」两级下拉选择：一级为 Gitee 远程分支，二级包含分支最新版本、所属标签和最近 20 次提交中属于该分支的提交；共享版本会出现在各所属分支下，无远程分支归属的版本单独归组，支持搜索分支名、标签、提交说明和提交哈希；
 - 切换时执行 `git reset --hard <ref>`，已跟踪文件的本地修改会被覆盖，但平台生成且未被 Git 跟踪的 `.env` / `conf.toml` 不受影响；
-- Git 克隆、fetch、版本读取与切换允许并发，可与 Compose/镜像命令同时执行。
+- Git 克隆、fetch、版本读取与切换允许并发，可与 Compose 命令同时执行。
 
 ### 配置实例
 
 点击「配置」打开弹窗：
 
-- 只允许修改 Backend 端口与 Web Client 端口（整数、1–65535、两者不能相同），保存时重新生成整个 `.env`，不提供 `.env` 原文编辑；
+- 通过 `conf.toml` 与 `.env` 两个标签页编辑文件全文，不再提供独立的端口输入框；
+- `.env` 按提交的原文保存，自定义变量、注释、空行和顺序均保留，不再按固定模板重建；需保留非空的 `COMPOSE_PROJECT_NAME` 以便识别实例；
 - `conf.toml` 在线编辑，保存前用 `tomllib` 校验语法，语法错误不覆盖原文件并返回错误行号；
 - 不校验 API Key、飞书配置等字段内容，这些问题最终由 Compose 命令输出反馈。
 
@@ -202,26 +202,16 @@ https://deck.example.com:<实例 Web 端口>?state=xxx&oauth2provider=feishu
 | 日志 | `docker compose logs -n 500 <服务名>` | 30 秒 |
 
 - 命令在实例目录中执行，参数以列表传递（禁止 Shell 拼接）；
-- Compose、日志读取、镜像检查和拉取均不加互斥锁，同实例及不同实例的请求可并发执行，不会因其他命令正在运行而返回 409；前端仅对正在执行的按钮显示加载状态，其他操作仍可使用；
+- Compose、日志读取均不加互斥锁，同实例及不同实例的请求可并发执行，不会因其他命令正在运行而返回 409；前端仅对正在执行的按钮显示加载状态，其他操作仍可使用；
 - 超时后终止命令并返回「命令执行超时」；
 - 结束后弹窗展示退出码、stdout、stderr，成功/失败分别以绿色/红色提示，内容支持复制；
 - `Down` 有确认提示，只下线容器，不删除实例目录和数据；
-- 点击「日志」后先列出 Compose 中的子服务；选择服务后按需读取该服务最近 500 行，不实时跟踪或自动刷新；
+- 点击「日志」后先列出 Compose 中的子服务；选择服务后按需读取该服务最近 500 行，日志弹窗使用「刷新」按钮代替复制按钮，可重新读取当前服务的日志，不实时跟踪或自动刷新；
 - 不保存任何执行历史，不自动刷新状态。
-
-### 拉取镜像
-
-点击顶部「拉取镜像」可检查并分别拉取：
-
-- `docker.1panel.live/library/ubuntu:22.04`：Xpeech Dockerfile 使用的基础镜像；
-- `ghcr.io/browserless/chromium:v2.55.0`：Xpeech Compose 使用的 Browserless 镜像；
-- `docker.1ms.run/library/golang:1.23-bookworm`：Go 1.23 Bookworm 镜像。
-
-弹窗展示镜像是否已存在，并在存在时显示镜像 ID、大小和创建时间。每个镜像可单独拉取，拉取完成后自动刷新对应状态。
 
 ### System Console
  
-点击顶部「Console」打开系统控制台。Git、Compose 以及镜像操作产生的命令、stdout、stderr 和退出码会按 JSONL 格式逐条追加到日志文件；打开 Console 时会读取最近 200 条历史，并在继续展示实时输出时始终只保留最近 200 条。默认路径是项目根目录下的 `console.jsonl`，也可在 `conf.toml` 中使用 `console_log_path` 指定绝对或项目相对路径。后端重启不会清空文件；「清空显示」只清空当前前端内容。
+点击顶部「Console」打开系统控制台。Git、Compose 操作产生的命令、stdout、stderr 和退出码会按 JSONL 格式逐条追加到日志文件；打开 Console 时会读取最近 200 条历史，并在继续展示实时输出时始终只保留最近 200 条。默认路径是项目根目录下的 `console.jsonl`，也可在 `conf.toml` 中使用 `console_log_path` 指定绝对或项目相对路径。后端重启不会清空文件；「清空显示」只清空当前前端内容。
 
 更新到带 Console 的版本后必须重启 Xpeech Deck 后端进程，使 `/api/console/stream` 路由完成注册；仅重新构建前端会出现“Console 接口尚未加载”的提示。
 
@@ -233,7 +223,7 @@ https://deck.example.com:<实例 Web 端口>?state=xxx&oauth2provider=feishu
 uv run pytest
 ```
 
-覆盖：认证、公开实例接口、OAuth2 根路径重定向、全局映射配置、Git 克隆/fetch/版本切换、实例列表、配置编辑（端口/TOML 校验）、Compose 命令参数/超时/并发、镜像状态检查与拉取、系统控制台缓存与流式输出。
+覆盖：认证、公开实例接口、OAuth2 根路径重定向、全局映射配置、Git 克隆/fetch/版本切换、实例列表、配置文件原文编辑与保留自定义变量、TOML 校验、Compose 命令参数/超时/并发、系统控制台缓存与流式输出。
 
 ### 前端开发
 
@@ -262,7 +252,6 @@ xpeech-deck/
 │   ├── instance_service.py     # 实例发现/创建/配置
 │   ├── git_service.py          # Git 克隆/fetch/版本切换
 │   ├── compose_service.py      # Compose 执行器（超时+并发）
-│   ├── image_service.py        # 镜像检查与拉取
 │   ├── skill_service.py        # 自定义内置技能安全安装与管理
 │   ├── console_service.py      # 系统控制台事件缓存与广播
 │   ├── schemas.py              # Pydantic 模型

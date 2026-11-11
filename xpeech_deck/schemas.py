@@ -10,6 +10,7 @@ class InstanceOut(BaseModel):
     name: str
     backend_port: int
     web_client_port: int
+    ports: list[str]
     path: str
 
 
@@ -55,15 +56,12 @@ class CreateInstanceIn(BaseModel):
 
 class InstanceConfigOut(BaseModel):
     name: str
-    backend_port: int
-    web_client_port: int
+    env_content: str
     conf_toml: str
 
 
 class SaveConfigIn(BaseModel):
-    # 端口允许整数或数字字符串，具体校验在服务层完成（保证返回 400 而非 422）
-    backend_port: int | str
-    web_client_port: int | str
+    env_content: str
     conf_toml: str
 
 
@@ -153,22 +151,3 @@ class MigrateSkillIn(BaseModel):
 
 class SkillMigrationOut(BaseModel):
     migrated: list[str]
-
-
-class ImageStatusOut(BaseModel):
-    key: str
-    label: str
-    name: str
-    status: Literal["available", "missing", "error"]
-    image_id: str | None = None
-    size_bytes: int | None = None
-    created_at: str | None = None
-    message: str = ""
-
-
-class ImageListOut(BaseModel):
-    images: list[ImageStatusOut]
-
-
-class ImagePullOut(ComposeResultOut):
-    image: ImageStatusOut
