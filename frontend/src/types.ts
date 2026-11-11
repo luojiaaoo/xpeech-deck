@@ -1,14 +1,14 @@
 export interface Instance {
   name: string
-  backend_port: number
-  web_client_port: number
+  backend_port: number | null
+  web_client_port: number | null
   ports: string[]
   path: string
 }
 
 export interface PublicInstance {
   name: string
-  web_client_port: number
+  web_client_port: number | null
 }
 
 export interface PublicInstanceList {
@@ -29,7 +29,9 @@ export interface InstanceConfig {
 
 export interface Skill {
   name: string
+  is_custom: boolean
   description: string
+  filter: string | null
   file_count: number
   size_bytes: number
 }

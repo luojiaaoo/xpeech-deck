@@ -21,6 +21,7 @@ import SystemConsoleModal from './SystemConsoleModal'
 import VersionInstanceModal from './VersionInstanceModal'
 import * as api from './api'
 import type { ComposeResult, Instance, PublicInstanceList } from './types'
+import { getWebClientUrl } from './webClient'
 
 const { Header, Content } = Layout
 
@@ -233,13 +234,11 @@ export default function App() {
                       role="link"
                       tabIndex={0}
                       onClick={() => {
-                        const target = new URL(window.location.href)
-                        target.protocol = 'http:'
-                        target.port = String(instance.web_client_port)
-                        target.pathname = '/'
-                        target.search = ''
-                        target.hash = ''
-                        window.open(target.toString(), '_blank', 'noopener,noreferrer')
+                        if (instance.web_client_port === null) {
+                          message.warning('实例未配置有效的 Web 端口')
+                          return
+                        }
+                        window.open(getWebClientUrl(instance.web_client_port), '_blank', 'noopener,noreferrer')
                       }}
                       onKeyDown={(event) => {
                         if (event.key === 'Enter' || event.key === ' ') {
@@ -262,6 +261,14 @@ export default function App() {
                         {instance.name}
                       </Typography.Title>
                       <div className="instance-card-rule" />
+                      <div className="instance-card-port">
+                        <span>Web 端口</span>
+                        {instance.web_client_port === null ? (
+                          <span style={{ marginLeft: 'auto' }}>未配置 Web 端口</span>
+                        ) : (
+                          <code>{instance.web_client_port}</code>
+                        )}
+                      </div>
                     </Card>
                   ))}
                 </div>
@@ -357,7 +364,6 @@ export default function App() {
       <SkillManagementModal
         open={skillsName !== null}
         instanceName={skillsName ?? ''}
-        instanceNames={instances.map((instance) => instance.name)}
         onClose={() => setSkillsName(null)}
       />
       <GlobalConfigModal

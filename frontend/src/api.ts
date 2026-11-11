@@ -177,22 +177,6 @@ export function downloadSkill(name: string, skillName: string): Promise<Blob> {
   )
 }
 
-export function migrateSkill(
-  name: string,
-  skillName: string,
-  targetInstances: string[],
-  overwrite = false,
-): Promise<{ migrated: string[] }> {
-  return request(
-    `/api/instances/${encodeURIComponent(name)}/skills/${encodeURIComponent(skillName)}/migrate`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ target_instances: targetInstances, overwrite }),
-    },
-  )
-}
-
 export function deleteSkill(name: string, skillName: string): Promise<{ success: boolean }> {
   return request(
     `/api/instances/${encodeURIComponent(name)}/skills/${encodeURIComponent(skillName)}`,

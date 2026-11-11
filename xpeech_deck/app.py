@@ -37,11 +37,10 @@ from .redis_service import RedisStore
 from .skill_service import (
     MAX_ARCHIVE_BYTES,
     delete_custom_skill,
-    export_custom_skill,
+    export_skill,
     install_custom_skill,
-    list_custom_skills,
-    migrate_custom_skill,
-    read_custom_skill_md,
+    list_skills,
+    read_skill_md,
     save_custom_skill_md,
 )
 from .schemas import (
@@ -59,7 +58,6 @@ from .schemas import (
     RedisWriteOut,
     RedirectMappingOut,
     SaveGlobalConfigIn,
-    MigrateSkillIn,
     GitFetchAllOut,
     GitFetchResultOut,
     InstanceVersionsOut,
@@ -67,7 +65,6 @@ from .schemas import (
     SaveSkillContentIn,
     SkillContentOut,
     SkillListOut,
-    SkillMigrationOut,
     SkillOut,
     SuccessOut,
     SwitchVersionIn,
@@ -311,7 +308,7 @@ def create_app(settings: Settings) -> FastAPI:
         )
         return SuccessOut(success=True)
 
-    # ---------- 自定义内置技能 ----------
+    # ---------- 技能管理 ----------
 
     @app.get(
         "/api/instances/{name}/skills",
@@ -319,7 +316,7 @@ def create_app(settings: Settings) -> FastAPI:
         response_model=SkillListOut,
     )
     async def get_skills(name: str):
-        skills = list_custom_skills(settings.root_path, name)
+        skills = list_skills(settings.root_path, name)
         return SkillListOut(skills=[SkillOut(**skill) for skill in skills])
 
     @app.post(
@@ -361,7 +358,7 @@ def create_app(settings: Settings) -> FastAPI:
         response_model=SkillContentOut,
     )
     async def get_skill_content(name: str, skill_name: str):
-        content = read_custom_skill_md(settings.root_path, name, skill_name)
+        content = read_skill_md(settings.root_path, name, skill_name)
         return SkillContentOut(content=content)
 
     @app.put(
@@ -378,7 +375,7 @@ def create_app(settings: Settings) -> FastAPI:
         dependencies=[Depends(require_token)],
     )
     async def download_skill(name: str, skill_name: str):
-        content = export_custom_skill(settings.root_path, name, skill_name)
+        content = export_skill(settings.root_path, name, skill_name)
         encoded_name = quote(f"{skill_name}.zip")
         return StreamingResponse(
             io.BytesIO(content),
@@ -388,21 +385,6 @@ def create_app(settings: Settings) -> FastAPI:
                 "Content-Length": str(len(content)),
             },
         )
-
-    @app.post(
-        "/api/instances/{name}/skills/{skill_name}/migrate",
-        dependencies=[Depends(require_token)],
-        response_model=SkillMigrationOut,
-    )
-    async def migrate_skill(name: str, skill_name: str, body: MigrateSkillIn):
-        migrated = migrate_custom_skill(
-            settings.root_path,
-            name,
-            skill_name,
-            body.target_instances,
-            overwrite=body.overwrite,
-        )
-        return SkillMigrationOut(migrated=migrated)
 
     @app.delete(
         "/api/instances/{name}/skills/{skill_name}",
@@ -492,6 +474,9 @@ def create_app(settings: Settings) -> FastAPI:
                 status_code=404,
                 content={"detail": f"映射指向的实例 {instance_name} 不存在"},
             )
+
+        if instance["web_client_port"] is None:
+            raise ValidationError(f"实例 {instance_name} 的 .env 未配置有效的 WEB_CLIENT_PORT")
 
         target = f"{settings.global_host}:{instance['web_client_port']}"
         passthrough = [

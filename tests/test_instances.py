@@ -14,20 +14,23 @@ from xpeech_deck.git_service import (
 def test_create_instance_success(client, auth_headers, root_path, make_instance):
     data = make_instance("demo01")
     assert data["name"] == "demo01"
-    assert data["backend_port"] == 7878
-    assert data["web_client_port"] == 7939
-    assert data["ports"] == ["7878", "7939"]
+    assert data["backend_port"] is None
+    assert data["web_client_port"] is None
+    assert data["ports"] == []
     assert data["path"] == str(root_path / "demo01")
 
     target = root_path / "demo01"
     assert target.is_dir()
 
-    # 默认 .env 内容：Compose 项目名 = 实例名
+    # 完整保留示例文件，仅将 Compose 项目名设置为实例名。
     env = (target / ".env").read_text(encoding="utf-8")
     assert "COMPOSE_PROJECT_NAME=demo01" in env
     assert "BACKEND_PORT=7878" in env
     assert "WEB_CLIENT_PORT=7939" in env
     assert "CDP_URL=ws://browserless:3000" in env
+    assert (target / ".env").read_bytes() == (target / ".env.example").read_bytes().replace(
+        b"COMPOSE_PROJECT_NAME=xpeech", b"COMPOSE_PROJECT_NAME=demo01"
+    )
 
     # 每个实例都是可 fetch/切换版本的独立 Git 工作树。
     assert (target / ".git").is_dir()
@@ -56,6 +59,74 @@ def test_create_instance_success(client, auth_headers, root_path, make_instance)
         str(target),
     ]
     assert clone_cwd == str(root_path)
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_create_preserves_template_configuration(
+    client, auth_headers, root_path, repository_template, make_instance, newline
+):
+    template = newline.join([
+        "# 自定义配置",
+        'export COMPOSE_PROJECT_NAME = "upstream" # 项目名',
+        "",
+        "POSTGRES_PASSWORD=custom-password",
+        "# BACKEND_PORT=7878",
+        "BACKEND_PORT=8787",
+        "WEB_CLIENT_PORT=8939",
+        "POSTGRES_PORT=7890",
+        "",
+    ])
+    source = repository_template / ".env.example"
+    source.write_bytes(template.encode("utf-8"))
+
+    data = make_instance("demo01")
+
+    target = root_path / "demo01"
+    expected = template.replace('"upstream"', "demo01").encode("utf-8")
+    assert (target / ".env").read_bytes() == expected
+    assert (target / ".env.example").read_bytes() == source.read_bytes()
+    assert data["backend_port"] == 8787
+    assert data["web_client_port"] == 8939
+    assert data["ports"] == ["8787", "8939", "7890"]
+    listed = client.get("/api/instances", headers=auth_headers).json()["instances"][0]
+    assert listed == data
+
+
+@pytest.mark.parametrize("template", ["", "# COMPOSE_PROJECT_NAME=xpeech\r\nCUSTOM=value"])
+def test_create_adds_missing_project_name(root_path, repository_template, make_instance, template):
+    (repository_template / ".env.example").write_bytes(template.encode("utf-8"))
+
+    make_instance("demo01")
+
+    newline = "\r\n" if "\r\n" in template else "\n"
+    expected = (template + newline if template else "") + f"COMPOSE_PROJECT_NAME=demo01{newline}"
+    assert (root_path / "demo01" / ".env").read_bytes() == expected.encode("utf-8")
+
+
+def test_create_missing_env_template_rolls_back(client, auth_headers, root_path, repository_template):
+    (repository_template / ".env.example").unlink()
+
+    response = client.post("/api/instances", json={"name": "demo01"}, headers=auth_headers)
+
+    assert response.status_code == 500
+    assert ".env.example" in response.json()["detail"]
+    assert not (root_path / "demo01").exists()
+
+
+@pytest.mark.parametrize("value", ["", "invalid", "0", "-1", "65536"])
+def test_invalid_ports_have_no_fallback(
+    client, auth_headers, repository_template, make_instance, value
+):
+    (repository_template / ".env.example").write_text(
+        f"COMPOSE_PROJECT_NAME=xpeech\nBACKEND_PORT={value}\nWEB_CLIENT_PORT={value}\n",
+        encoding="utf-8",
+    )
+    data = make_instance("demo01")
+    assert data["backend_port"] is None
+    assert data["web_client_port"] is None
+    listed = client.get("/api/instances", headers=auth_headers).json()["instances"][0]
+    assert listed["backend_port"] is None
+    assert listed["web_client_port"] is None
 
 
 def test_create_duplicate_conflict(client, auth_headers, make_instance):

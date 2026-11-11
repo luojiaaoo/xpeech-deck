@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Input, Modal, Spin, Tabs, message } from 'antd'
+import { Modal, Spin, Tabs, message } from 'antd'
 import * as api from './api'
+import LineNumberEditor from './LineNumberEditor'
 
 interface Props {
   open: boolean
@@ -78,24 +79,20 @@ export default function ConfigInstanceModal({ open, instanceName, onCancel, onSa
           defaultActiveKey="conf.toml"
           items={[
             { key: 'conf.toml', label: 'conf.toml', children: (
-              <Input.TextArea
-                aria-label="conf.toml"
-                className="mono"
+              <LineNumberEditor
+                label="conf.toml"
                 value={confToml}
-                onChange={(e) => setConfToml(e.target.value)}
+                onChange={setConfToml}
                 rows={24}
-                spellCheck={false}
                 disabled={!loaded || saving}
               />
             ) },
             { key: '.env', label: '.env', children: (
-              <Input.TextArea
-                aria-label=".env"
-                className="mono"
+              <LineNumberEditor
+                label=".env"
                 value={envContent}
-                onChange={(e) => setEnvContent(e.target.value)}
+                onChange={setEnvContent}
                 rows={24}
-                spellCheck={false}
                 disabled={!loaded || saving}
               />
             ) },

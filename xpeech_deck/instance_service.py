@@ -13,10 +13,6 @@ from .errors import ConflictError, FileOperationError, NotFoundError, Validation
 # 实例名：字母/数字开头，后续允许字母、数字、下划线、连字符，最长 63 字符
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$")
 
-DEFAULT_BACKEND_PORT = 7878
-DEFAULT_WEB_CLIENT_PORT = 7939
-CDP_URL = "ws://browserless:3000"
-
 
 def validate_name(name: str) -> str:
     name = name.strip()
@@ -48,21 +44,29 @@ def parse_dotenv(text: str) -> dict[str, str]:
     return result
 
 
-def build_dotenv(name: str, backend_port: int, web_client_port: int) -> str:
-    """仅在创建实例时生成默认 .env，后续由用户直接编辑。"""
-    return (
-        f"COMPOSE_PROJECT_NAME={name}\n"
-        f"BACKEND_PORT={backend_port}\n"
-        f"WEB_CLIENT_PORT={web_client_port}\n"
-        f"CDP_URL={CDP_URL}\n"
+def build_dotenv(name: str, template: str) -> str:
+    """保留示例配置原文，仅设置实例的 Compose 项目名。"""
+    content, count = re.subn(
+        r"(?m)^([ \t]*(?:export[ \t]+)?COMPOSE_PROJECT_NAME[ \t]*=[ \t]*)"
+        r"(?:\"[^\"\r\n]*\"|'[^'\r\n]*'|[^\r\n]*?)"
+        r"([ \t]+#[^\r\n]*|[ \t]*)(\r?)$",
+        lambda match: f"{match[1]}{name}{match[2]}{match[3]}",
+        template,
     )
+    if not count:
+        newline = "\r\n" if "\r\n" in template else "\n"
+        if content and not content.endswith(("\r", "\n")):
+            content += newline
+        content += f"COMPOSE_PROJECT_NAME={name}{newline}"
+    return content
 
 
-def _int_or(env: dict[str, str], key: str, default: int) -> int:
+def _port(env: dict[str, str], key: str) -> int | None:
     try:
-        return int(env[key])
+        port = int(env[key])
     except (KeyError, ValueError):
-        return default
+        return None
+    return port if 1 <= port <= 65535 else None
 
 
 def _recognize_instance(root_path: Path, name: str) -> Path:
@@ -107,8 +111,8 @@ def list_instances(root_path: Path) -> list[dict]:
         instances.append(
             {
                 "name": child.name,
-                "backend_port": _int_or(env, "BACKEND_PORT", DEFAULT_BACKEND_PORT),
-                "web_client_port": _int_or(env, "WEB_CLIENT_PORT", DEFAULT_WEB_CLIENT_PORT),
+                "backend_port": _port(env, "BACKEND_PORT"),
+                "web_client_port": _port(env, "WEB_CLIENT_PORT"),
                 "ports": [value for key, value in env.items() if key.endswith("_PORT") and value],
                 "path": str(child),
             }
@@ -121,7 +125,7 @@ async def create_instance(
     name: str,
     clone: Callable[[Path], Awaitable[dict]],
 ) -> dict:
-    """从远程仓库克隆 Xpeech，生成默认 .env 与 conf.toml。"""
+    """从远程仓库克隆 Xpeech，由示例文件初始化 .env 与 conf.toml。"""
     name = validate_name(name)
     target = root_path / name
     try:
@@ -138,11 +142,12 @@ async def create_instance(
             detail = result["stderr"].strip() or result["stdout"].strip() or "未知错误"
             raise FileOperationError(f"克隆 Xpeech 失败：{detail}")
 
-        backend_port = DEFAULT_BACKEND_PORT
-        web_client_port = DEFAULT_WEB_CLIENT_PORT
-        (target / ".env").write_text(
-            build_dotenv(name, backend_port, web_client_port), encoding="utf-8"
-        )
+        template = (target / ".env.example").read_bytes().decode("utf-8")
+        env_content = build_dotenv(name, template)
+        (target / ".env").write_bytes(env_content.encode("utf-8"))
+        env = parse_dotenv(env_content)
+        backend_port = _port(env, "BACKEND_PORT")
+        web_client_port = _port(env, "WEB_CLIENT_PORT")
         example = target / "conf.toml.example"
         if example.is_file():
             shutil.copy2(example, target / "conf.toml")
@@ -165,7 +170,7 @@ async def create_instance(
         "name": name,
         "backend_port": backend_port,
         "web_client_port": web_client_port,
-        "ports": [str(backend_port), str(web_client_port)],
+        "ports": [value for key, value in env.items() if key.endswith("_PORT") and value],
         "path": str(target),
     }
 

@@ -6,6 +6,8 @@ import io
 import stat
 import zipfile
 
+import pytest
+
 
 def _skill_md(name: str = "weather-plus", description: str = "补充天气能力") -> bytes:
     return (
@@ -50,7 +52,9 @@ def test_upload_adds_x_prefix_and_lists_skill(client, auth_headers, make_instanc
     assert response.status_code == 201, response.text
     data = response.json()
     assert data["name"] == "x-weather-plus"
+    assert data["is_custom"] is True
     assert data["description"] == "补充天气能力"
+    assert data["filter"] is None
     assert data["file_count"] == 2
     target = (
         root_path
@@ -67,6 +71,56 @@ def test_upload_adds_x_prefix_and_lists_skill(client, auth_headers, make_instanc
     listed = client.get("/api/instances/demo01/skills", headers=auth_headers)
     assert listed.status_code == 200
     assert [skill["name"] for skill in listed.json()["skills"]] == ["x-weather-plus"]
+
+
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    [
+        ('filter: channel == "feishu"\n', 'channel == "feishu"'),
+        ("filter: 'channel == \"feishu\"'\n", 'channel == "feishu"'),
+        ('filter: >-\n  channel == "feishu"\n  and org == "demo"\n',
+         'channel == "feishu" and org == "demo"'),
+        ("filter:\n", ""),
+        ("", None),
+        ("# filter: ignored\n", None),
+    ],
+)
+def test_skill_filter_is_exposed_from_frontmatter(
+    client, auth_headers, make_instance, field, expected
+):
+    make_instance("demo01")
+    content = (
+        "---\nname: helper\ndescription: 技能描述\n"
+        f"{field}---\n\n# Body\nfilter: not-frontmatter\n"
+    )
+
+    uploaded = _upload(client, auth_headers, content.encode("utf-8"), "SKILL.md")
+    assert uploaded.status_code == 201, uploaded.text
+    assert uploaded.json()["filter"] == expected
+    assert uploaded.json()["description"] == "技能描述"
+
+    listed = client.get("/api/instances/demo01/skills", headers=auth_headers)
+    assert listed.json()["skills"][0]["filter"] == expected
+
+    edited = (
+        "---\nname: helper\ndescription: 技能描述\n"
+        'filter: org == "updated"\n---\n\n# Body\n'
+    )
+    saved = client.put(
+        "/api/instances/demo01/skills/x-helper/content",
+        headers=auth_headers,
+        json={"content": edited},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["filter"] == 'org == "updated"'
+
+    removed = client.put(
+        "/api/instances/demo01/skills/x-helper/content",
+        headers=auth_headers,
+        json={"content": _skill_md("helper").decode("utf-8")},
+    )
+    assert removed.status_code == 200, removed.text
+    assert removed.json()["filter"] is None
 
 
 def test_upload_does_not_duplicate_existing_x_prefix(client, auth_headers, make_instance, root_path):
@@ -198,89 +252,6 @@ def test_online_edit_and_download_complete_skill(
         assert archive.read("x-weather-plus/scripts/run.py") == b"print('ok')\n"
 
 
-def test_migrate_skill_to_multiple_instances_with_conflict_preflight(
-    client, auth_headers, make_instance, root_path
-):
-    for name in ("demo01", "target01", "target02"):
-        make_instance(name)
-    first = _skill_archive(
-        description="第一版",
-        extra_files={"references/guide.md": "guide-v1\n"},
-    )
-    assert _upload(client, auth_headers, first, "weather-plus.zip").status_code == 201
-
-    migrated = client.post(
-        "/api/instances/demo01/skills/x-weather-plus/migrate",
-        headers=auth_headers,
-        json={"target_instances": ["target01", "target02"]},
-    )
-    assert migrated.status_code == 200, migrated.text
-    assert migrated.json() == {"migrated": ["target01", "target02"]}
-    target_root = root_path / "target01" / "xpeech" / "agent" / "skills" / "buildin"
-    assert (target_root / "x-weather-plus" / "references" / "guide.md").read_text() == "guide-v1\n"
-
-    second = _skill_archive(
-        description="第二版",
-        extra_files={"references/guide.md": "guide-v2\n"},
-    )
-    assert _upload(
-        client, auth_headers, second, "weather-plus.zip", overwrite=True
-    ).status_code == 201
-    target03 = make_instance("target03")
-    assert target03["name"] == "target03"
-
-    conflict = client.post(
-        "/api/instances/demo01/skills/x-weather-plus/migrate",
-        headers=auth_headers,
-        json={"target_instances": ["target01", "target03"]},
-    )
-    assert conflict.status_code == 409
-    assert not (
-        root_path
-        / "target03"
-        / "xpeech"
-        / "agent"
-        / "skills"
-        / "buildin"
-        / "x-weather-plus"
-    ).exists()
-
-    overwritten = client.post(
-        "/api/instances/demo01/skills/x-weather-plus/migrate",
-        headers=auth_headers,
-        json={
-            "target_instances": ["target01", "target03", "target01"],
-            "overwrite": True,
-        },
-    )
-    assert overwritten.status_code == 200, overwritten.text
-    assert overwritten.json() == {"migrated": ["target01", "target03"]}
-    for name in ("target01", "target03"):
-        copied = (
-            root_path
-            / name
-            / "xpeech"
-            / "agent"
-            / "skills"
-            / "buildin"
-            / "x-weather-plus"
-            / "references"
-            / "guide.md"
-        )
-        assert copied.read_text() == "guide-v2\n"
-
-
-def test_migration_rejects_source_instance_as_target(client, auth_headers, make_instance):
-    make_instance("demo01")
-    assert _upload(client, auth_headers, _skill_archive(), "weather-plus.zip").status_code == 201
-    response = client.post(
-        "/api/instances/demo01/skills/x-weather-plus/migrate",
-        headers=auth_headers,
-        json={"target_instances": ["demo01"]},
-    )
-    assert response.status_code == 400
-
-
 def test_delete_only_allows_custom_skills(client, auth_headers, make_instance, root_path):
     make_instance("demo01")
     skills_root = root_path / "demo01" / "xpeech" / "agent" / "skills" / "buildin"
@@ -290,7 +261,8 @@ def test_delete_only_allows_custom_skills(client, auth_headers, make_instance, r
     assert _upload(client, auth_headers, _skill_archive(), "weather-plus.zip").status_code == 201
 
     listed = client.get("/api/instances/demo01/skills", headers=auth_headers)
-    assert [skill["name"] for skill in listed.json()["skills"]] == ["x-weather-plus"]
+    assert [skill["name"] for skill in listed.json()["skills"]] == ["weather", "x-weather-plus"]
+    assert [skill["is_custom"] for skill in listed.json()["skills"]] == [False, True]
 
     protected = client.delete("/api/instances/demo01/skills/weather", headers=auth_headers)
     assert protected.status_code == 400
@@ -302,6 +274,57 @@ def test_delete_only_allows_custom_skills(client, auth_headers, make_instance, r
     assert deleted.status_code == 200
     assert deleted.json() == {"success": True}
     assert not (skills_root / "x-weather-plus").exists()
+
+
+def test_builtin_skills_can_be_viewed_and_downloaded_but_not_edited(
+    client, auth_headers, make_instance, root_path
+):
+    make_instance("demo01")
+    skills_root = root_path / "demo01" / "xpeech" / "agent" / "skills" / "buildin"
+    builtin = skills_root / "weather"
+    builtin.mkdir(parents=True)
+    content = (
+        '---\nname: weather\ndescription: 内置天气技能\nfilter: org == "demo"\n---\n# Weather\n'
+    )
+    (builtin / "SKILL.md").write_text(content, encoding="utf-8")
+    (builtin / "helper.py").write_bytes(b"print('weather')\n")
+    (skills_root / "not-a-skill").mkdir()
+
+    listed = client.get("/api/instances/demo01/skills", headers=auth_headers).json()["skills"]
+    assert len(listed) == 1
+    assert listed[0]["name"] == "weather"
+    assert listed[0]["is_custom"] is False
+    assert listed[0]["description"] == "内置天气技能"
+    assert listed[0]["filter"] == 'org == "demo"'
+
+    viewed = client.get("/api/instances/demo01/skills/weather/content", headers=auth_headers)
+    assert viewed.status_code == 200
+    assert viewed.json()["content"] == content
+
+    downloaded = client.get("/api/instances/demo01/skills/weather/download", headers=auth_headers)
+    assert downloaded.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(downloaded.content)) as archive:
+        assert set(archive.namelist()) == {"weather/SKILL.md", "weather/helper.py"}
+        assert archive.read("weather/helper.py") == b"print('weather')\n"
+
+    edited = client.put(
+        "/api/instances/demo01/skills/weather/content",
+        headers=auth_headers,
+        json={"content": _skill_md("weather").decode("utf-8")},
+    )
+    assert edited.status_code == 400
+    assert (builtin / "SKILL.md").read_text(encoding="utf-8") == content
+
+
+@pytest.mark.parametrize("skill_name", ["..", ".", "../outside", "nested/skill", "C:outside", "\\outside"])
+def test_skill_reads_reject_paths_outside_single_directory(make_instance, root_path, skill_name):
+    from xpeech_deck.errors import ValidationError
+    from xpeech_deck.skill_service import read_skill_md, export_skill
+
+    make_instance("demo01")
+    for read in (read_skill_md, export_skill):
+        with pytest.raises(ValidationError):
+            read(root_path, "demo01", skill_name)
 
 
 def test_rejects_unsafe_or_invalid_archives(client, auth_headers, make_instance):
@@ -351,10 +374,6 @@ def test_skill_routes_require_authentication(client, make_instance):
         "/api/instances/demo01/skills/x-sample/content", json={"content": "test"}
     ).status_code == 401
     assert client.get("/api/instances/demo01/skills/x-sample/download").status_code == 401
-    assert client.post(
-        "/api/instances/demo01/skills/x-sample/migrate",
-        json={"target_instances": ["target01"]},
-    ).status_code == 401
 
 
 def test_skill_routes_for_missing_instance_return_404(client, auth_headers):

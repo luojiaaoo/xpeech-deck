@@ -2,13 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   Alert,
   Button,
-  Input,
   List,
   Modal,
   Popconfirm,
-  Select,
   Space,
   Spin,
+  Switch,
   Tag,
   Typography,
   Upload,
@@ -18,17 +17,17 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  EyeOutlined,
   InboxOutlined,
   ReloadOutlined,
-  SwapOutlined,
 } from '@ant-design/icons'
 import * as api from './api'
 import type { Skill } from './types'
+import LineNumberEditor from './LineNumberEditor'
 
 interface Props {
   open: boolean
   instanceName: string
-  instanceNames: string[]
   onClose: () => void
 }
 
@@ -49,33 +48,27 @@ function formatSize(value: number): string {
 export default function SkillManagementModal({
   open,
   instanceName,
-  instanceNames,
   onClose,
 }: Props) {
   const [skills, setSkills] = useState<Skill[]>([])
+  const [customOnly, setCustomOnly] = useState(false)
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [deleting, setDeleting] = useState<string | null>(null)
   const [downloading, setDownloading] = useState<string | null>(null)
 
   const [editingName, setEditingName] = useState<string | null>(null)
+  const [editorReadOnly, setEditorReadOnly] = useState(false)
   const [editorContent, setEditorContent] = useState('')
   const [editorLoading, setEditorLoading] = useState(false)
   const [editorSaving, setEditorSaving] = useState(false)
 
-  const [migrationSkill, setMigrationSkill] = useState<Skill | null>(null)
-  const [migrationTargets, setMigrationTargets] = useState<string[]>([])
-  const [migrating, setMigrating] = useState(false)
-
-  const availableTargets = useMemo(
-    () => instanceNames.filter((name) => name !== instanceName),
-    [instanceName, instanceNames],
-  )
   const editorBytes = useMemo(
     () => new TextEncoder().encode(editorContent).length,
     [editorContent],
   )
-  const working = uploading || deleting !== null || downloading !== null || migrating
+  const working = uploading || deleting !== null || downloading !== null
+  const visibleSkills = customOnly ? skills.filter((skill) => skill.is_custom) : skills
 
   const loadSkills = useCallback(async () => {
     if (!instanceName) return
@@ -94,7 +87,6 @@ export default function SkillManagementModal({
     if (!open) return
     setSkills([])
     setEditingName(null)
-    setMigrationSkill(null)
     void loadSkills()
   }, [open, loadSkills])
 
@@ -137,6 +129,7 @@ export default function SkillManagementModal({
 
   const openEditor = async (skill: Skill) => {
     setEditingName(skill.name)
+    setEditorReadOnly(!skill.is_custom)
     setEditorContent('')
     setEditorLoading(true)
     try {
@@ -151,7 +144,7 @@ export default function SkillManagementModal({
   }
 
   const saveEditor = async () => {
-    if (!editingName) return
+    if (!editingName || editorReadOnly) return
     if (editorBytes > MAX_SKILL_MD_BYTES) {
       message.error('SKILL.md 不能超过 1 MB')
       return
@@ -189,46 +182,6 @@ export default function SkillManagementModal({
     }
   }
 
-  const openMigration = (skill: Skill) => {
-    if (availableTargets.length === 0) {
-      message.info('暂无其他实例可迁移')
-      return
-    }
-    setMigrationSkill(skill)
-    setMigrationTargets([])
-  }
-
-  const migrate = async (overwrite = false) => {
-    if (!migrationSkill || migrationTargets.length === 0) return
-    setMigrating(true)
-    try {
-      const result = await api.migrateSkill(
-        instanceName,
-        migrationSkill.name,
-        migrationTargets,
-        overwrite,
-      )
-      message.success(`技能 ${migrationSkill.name} 已迁移到 ${result.migrated.length} 个实例`)
-      setMigrationSkill(null)
-      setMigrationTargets([])
-    } catch (error) {
-      if (error instanceof api.ApiError && error.status === 409 && !overwrite) {
-        Modal.confirm({
-          title: '部分目标已存在同名技能',
-          content: `${error.message}。是否覆盖这些目标实例中的现有版本？`,
-          okText: '覆盖并迁移',
-          okButtonProps: { danger: true },
-          cancelText: '取消',
-          onOk: () => migrate(true),
-        })
-      } else {
-        message.error(error instanceof Error ? error.message : String(error))
-      }
-    } finally {
-      setMigrating(false)
-    }
-  }
-
   const remove = async (skill: Skill) => {
     setDeleting(skill.name)
     try {
@@ -245,7 +198,7 @@ export default function SkillManagementModal({
   return (
     <>
       <Modal
-        title={`自定义内置技能：${instanceName}`}
+        title={`技能管理：${instanceName}`}
         open={open}
         onCancel={onClose}
         width={960}
@@ -267,8 +220,8 @@ export default function SkillManagementModal({
           <Alert
             type="info"
             showIcon
-            message="完整管理 x-* 自定义内置技能"
-            description="支持上传、在线编辑 SKILL.md、下载完整 ZIP，以及将技能迁移到多个实例。上传后会自动添加 x- 前缀。"
+            message="查看全部内置技能，管理自定义技能"
+            description="内置技能支持查看和下载；自定义技能还可在线编辑和删除。上传后会自动添加 x- 前缀。"
           />
           <Upload.Dragger
             accept=".md,.zip"
@@ -285,21 +238,26 @@ export default function SkillManagementModal({
             <p className="ant-upload-hint">SKILL.md 最大 1 MB，ZIP 最大 20 MB；同名技能可确认覆盖</p>
           </Upload.Dragger>
 
+          <Space>
+            <Switch id="custom-skills-only" checked={customOnly} onChange={setCustomOnly} />
+            <label htmlFor="custom-skills-only">只显示自定义</label>
+          </Space>
+
           <Spin spinning={loading && skills.length === 0}>
             <List
               bordered
-              dataSource={skills}
-              locale={{ emptyText: loading ? '正在读取技能…' : '暂无自定义内置技能' }}
+              dataSource={visibleSkills}
+              locale={{ emptyText: loading ? '正在读取技能…' : customOnly ? '暂无自定义技能' : '暂无技能' }}
               renderItem={(skill) => (
                 <List.Item
                   actions={[
                     <Button
                       key="edit"
-                      icon={<EditOutlined />}
+                      icon={skill.is_custom ? <EditOutlined /> : <EyeOutlined />}
                       disabled={working}
                       onClick={() => void openEditor(skill)}
                     >
-                      在线编辑
+                      {skill.is_custom ? '在线编辑' : '查看'}
                     </Button>,
                     <Button
                       key="download"
@@ -310,15 +268,7 @@ export default function SkillManagementModal({
                     >
                       下载
                     </Button>,
-                    <Button
-                      key="migrate"
-                      icon={<SwapOutlined />}
-                      disabled={working || availableTargets.length === 0}
-                      onClick={() => openMigration(skill)}
-                    >
-                      多实例迁移
-                    </Button>,
-                    <Popconfirm
+                    ...(skill.is_custom ? [<Popconfirm
                       key="delete"
                       title={`删除技能 ${skill.name}？`}
                       description="删除后无法在 Deck 中恢复。"
@@ -335,18 +285,25 @@ export default function SkillManagementModal({
                       >
                         删除
                       </Button>
-                    </Popconfirm>,
+                    </Popconfirm>] : []),
                   ]}
                 >
                   <List.Item.Meta
                     title={
                       <Space>
                         <Typography.Text strong className="mono">{skill.name}</Typography.Text>
-                        <Tag color="blue">自定义内置</Tag>
+                        <Tag color={skill.is_custom ? 'blue' : 'default'}>
+                          {skill.is_custom ? '自定义' : '内置'}
+                        </Tag>
                       </Space>
                     }
                     description={
                       <Space direction="vertical" size={2}>
+                        {skill.filter !== null && skill.filter !== undefined && (
+                          <Typography.Text type="danger" style={{ overflowWrap: 'anywhere' }}>
+                            filter: {skill.filter || '(空)'}
+                          </Typography.Text>
+                        )}
                         <Typography.Text type={skill.description ? undefined : 'secondary'}>
                           {skill.description || 'SKILL.md 未提供描述'}
                         </Typography.Text>
@@ -364,63 +321,34 @@ export default function SkillManagementModal({
       </Modal>
 
       <Modal
-        title={`在线编辑：${editingName ?? ''}/SKILL.md`}
+        title={`${editorReadOnly ? '查看技能' : '在线编辑'}：${editingName ?? ''}/SKILL.md`}
         open={editingName !== null}
         width={880}
         okText="保存"
         cancelText="取消"
         confirmLoading={editorSaving}
+        footer={editorReadOnly ? <Button onClick={() => setEditingName(null)}>关闭</Button> : undefined}
         okButtonProps={{ disabled: editorLoading || editorBytes > MAX_SKILL_MD_BYTES }}
         onOk={() => void saveEditor()}
         onCancel={() => !editorSaving && setEditingName(null)}
         destroyOnClose
       >
         <Spin spinning={editorLoading}>
-          <Input.TextArea
-            className="skill-editor"
+          <LineNumberEditor
+            key={editingName}
+            label="SKILL.md"
             value={editorContent}
             rows={24}
-            spellCheck={false}
-            onChange={(event) => setEditorContent(event.target.value)}
+            readOnly={editorReadOnly}
+            disabled={editorLoading || editorSaving}
+            onChange={setEditorContent}
           />
           <Typography.Text type={editorBytes > MAX_SKILL_MD_BYTES ? 'danger' : 'secondary'}>
-            {formatSize(editorBytes)} / 1 MB
+            {formatSize(editorBytes)}{!editorReadOnly && ' / 1 MB'}
           </Typography.Text>
         </Spin>
       </Modal>
 
-      <Modal
-        title={`多实例迁移：${migrationSkill?.name ?? ''}`}
-        open={migrationSkill !== null}
-        okText="开始迁移"
-        cancelText="取消"
-        confirmLoading={migrating}
-        okButtonProps={{ disabled: migrationTargets.length === 0 }}
-        onOk={() => void migrate()}
-        onCancel={() => !migrating && setMigrationSkill(null)}
-        destroyOnClose
-      >
-        <Space direction="vertical" size="middle" style={{ width: '100%' }}>
-          <Alert
-            type="info"
-            showIcon
-            message="完整技能目录会复制到所选实例"
-            description="若目标实例已存在同名技能，系统会在执行前询问是否覆盖。"
-          />
-          <Space.Compact style={{ width: '100%' }}>
-            <Select
-              mode="multiple"
-              style={{ width: '100%' }}
-              placeholder="选择一个或多个目标实例"
-              value={migrationTargets}
-              options={availableTargets.map((name) => ({ label: name, value: name }))}
-              onChange={setMigrationTargets}
-              maxTagCount="responsive"
-            />
-            <Button onClick={() => setMigrationTargets(availableTargets)}>全选</Button>
-          </Space.Compact>
-        </Space>
-      </Modal>
     </>
   )
 }

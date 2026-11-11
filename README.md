@@ -121,7 +121,11 @@ GET /api/public/redis/oauth2context/<state>
 
 成功时以 `text/plain` 直接返回存储值（如 `serialized-context`）；键不存在或已过期时返回 404。Redis 连接通过 `conf.toml` 中的 `redis_url` 和 `redis_password` 配置，内部 key 前缀无需配置。
 
-不带 Token 访问根路径时，页面展示系统名称与实例卡片；卡片显示实例名，点击后在新标签页打开对应 Web 界面。管理实例列表中的「端口」列读取 `.env` 中所有名称以 `_PORT` 结尾的非空变量值，按文件中的顺序以逗号分隔显示；卡片与全局配置选项不显示端口。没有实例时仅显示「暂无实例」。
+不带 Token 访问根路径时，页面展示系统名称与实例卡片；卡片显示实例名及 `.env` 中配置的 `WEB_CLIENT_PORT` 值，未配置时显示「未配置 Web 端口」，点击后在新标签页打开对应 Web 界面。管理实例列表中的「端口」列读取 `.env` 中所有名称以 `_PORT` 结尾的非空变量值，按文件中的顺序以逗号分隔显示；全局配置选项不显示端口。没有实例时仅显示「暂无实例」。
+
+端口仅从 `.env` 中已启用的变量读取，不使用固定默认值。`BACKEND_PORT` / `WEB_CLIENT_PORT` 缺失或无效时，API 返回 `null`；Web 端口未配置时，点击卡片会提示，OAuth2 重定向返回 400。需要跳转的实例须在 `.env` 中显式配置有效的 `WEB_CLIENT_PORT`。
+
+管理列表的「超链接」列提供 `WEB_CLIENT` 超链接按钮，在新标签页打开当前主机上该实例的 `WEB_CLIENT_PORT`，不会携带管理页 Token；未配置有效端口时按钮禁用。
 
 ### OAuth2 回调重定向与全局配置
 
@@ -156,7 +160,7 @@ https://deck.example.com:<实例 Web 端口>?state=xxx&oauth2provider=feishu
 
 点击「添加实例」，输入实例名（字母/数字开头，允许 `-` `_`，最长 63 字符）。平台会直接从 `https://gitee.com/luojiaaoo/xpeech.git` 浅克隆全部远程分支最近 20 次提交，保留 `.git/` 以便后续更新与切换版本，定时 fetch 会维持 20 层历史并同步标签。平台的 Gitee 网络命令固定使用 TLS 1.2 / HTTP 1.1 以兼容 WSL 本地代理；遇到 TLS 握手、连接重置等瞬时网络错误时会自动尝试最多 3 次，然后生成：
 
-- `.env`：`COMPOSE_PROJECT_NAME` = 实例名，默认 `BACKEND_PORT=7878`、`WEB_CLIENT_PORT=7939`、`CDP_URL=ws://browserless:3000`
+- `.env`：从 `.env.example` 初始化，保留模板中的配置、注释、空行与顺序，仅将 `COMPOSE_PROJECT_NAME` 设置为实例名（模板未提供时追加）；端口等配置沿用模板，不再写入固定值。缺少 `.env.example` 时创建失败并清理实例目录。
 - `conf.toml`：由 `conf.toml.example` 复制而来
 
 重复名称返回「实例已存在」，不支持覆盖创建。
@@ -174,20 +178,23 @@ https://deck.example.com:<实例 Web 端口>?state=xxx&oauth2provider=feishu
 点击「配置」打开弹窗：
 
 - 通过 `conf.toml` 与 `.env` 两个标签页编辑文件全文，不再提供独立的端口输入框；
+- 配置文件及 `SKILL.md` 编辑框均显示行号，随增删行更新并同步滚动；长行支持横向滚动；
 - `.env` 按提交的原文保存，自定义变量、注释、空行和顺序均保留，不再按固定模板重建；需保留非空的 `COMPOSE_PROJECT_NAME` 以便识别实例；
 - `conf.toml` 在线编辑，保存前用 `tomllib` 校验语法，语法错误不覆盖原文件并返回错误行号；
 - 不校验 API Key、飞书配置等字段内容，这些问题最终由 Compose 命令输出反馈。
 
-### 自定义内置技能
+### 技能管理
 
-点击实例行内的「技能管理」，可查看、上传、编辑、下载、迁移和删除该实例的自定义内置技能：
+点击实例行内的「技能管理」，可查看该实例的全部内置技能，列表区分「内置」和「自定义」：
 
+- 列表上方提供「只显示自定义」开关，默认关闭，开启后仅显示自定义技能；
+- `SKILL.md` 的 YAML frontmatter 包含 `filter` 时，技能名下方会用红字单独显示 `filter` 的值，在线编辑保存后同步更新；
 - 可直接上传 UTF-8 编码的 `SKILL.md`，平台从 YAML frontmatter 的 `name` 创建技能目录；包含 `scripts/`、`references/`、`assets/` 等资源时可上传 `.zip`，压缩包根目录或唯一的一级目录中必须包含 `SKILL.md`；
 - 上传后技能目录会自动添加 `x-` 前缀（已有前缀不会重复添加），并安装到实例的 `xpeech/agent/skills/buildin/` 目录；
 - 同名技能不会直接覆盖，确认后才会以新版本替换；单个压缩包最大 20 MB，解压后最大 100 MB、最多 2000 个文件；
 - 可在线编辑并原子保存 `SKILL.md`（最大 1 MB），保存前校验 YAML frontmatter 中是否包含 `name`；
-- 可将包含 `scripts/`、`references/`、`assets/` 的完整技能下载为 ZIP，或一次迁移到多个目标实例；迁移遇到同名技能时先统一确认，再执行覆盖；
-- 页面只列出和删除 `x-*` 自定义技能，仓库自带技能不属于可管理范围；这些目录由 Xpeech 的 `.gitignore` 忽略，因此 fetch 或版本切换不会把它们纳入仓库文件。
+- 可将包含 `scripts/`、`references/`、`assets/` 的完整技能下载为 ZIP；
+- 仓库自带内置技能支持查看 `SKILL.md` 和下载完整 ZIP；`x-*` 自定义技能还可在线编辑和删除。自定义目录由 Xpeech 的 `.gitignore` 忽略，因此 fetch 或版本切换不会把它们纳入仓库文件。
 
 ### Compose 操作
 
@@ -252,7 +259,7 @@ xpeech-deck/
 │   ├── instance_service.py     # 实例发现/创建/配置
 │   ├── git_service.py          # Git 克隆/fetch/版本切换
 │   ├── compose_service.py      # Compose 执行器（超时+并发）
-│   ├── skill_service.py        # 自定义内置技能安全安装与管理
+│   ├── skill_service.py        # 自定义技能安全安装与管理
 │   ├── console_service.py      # 系统控制台事件缓存与广播
 │   ├── schemas.py              # Pydantic 模型
 │   └── static/                 # 前端构建产物

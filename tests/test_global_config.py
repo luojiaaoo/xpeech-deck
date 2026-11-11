@@ -18,7 +18,7 @@ def test_public_instances_only_expose_name_and_web_port(client, make_instance):
     assert response.status_code == 200
     assert response.json() == {
         "display_name": "Xpeech Deck",
-        "instances": [{"name": "demo01", "web_client_port": 7939}],
+        "instances": [{"name": "demo01", "web_client_port": None}],
     }
 
 
@@ -67,9 +67,12 @@ def test_global_config_rejects_duplicate_redirect_to(client, auth_headers):
 
 
 def test_root_redirects_using_realtime_mapping_and_passes_oauth_params(
-    settings, make_instance
+    settings, make_instance, root_path
 ):
     make_instance("demo01")
+    (root_path / "demo01" / ".env").write_text(
+        "COMPOSE_PROJECT_NAME=demo01\nWEB_CLIENT_PORT=8939\n", encoding="utf-8"
+    )
     configured = replace(settings, global_host="https://deck.example.com")
     configured.global_config_path.write_text(
         json.dumps({"redirect_to": {"desktop": "demo01"}}), encoding="utf-8"
@@ -83,7 +86,7 @@ def test_root_redirects_using_realtime_mapping_and_passes_oauth_params(
 
     assert response.status_code == 307
     assert response.headers["location"] == (
-        "https://deck.example.com:7939?state=a%2Fb%3D&oauth2provider=feishu"
+        "https://deck.example.com:8939?state=a%2Fb%3D&oauth2provider=feishu"
     )
 
     configured.global_config_path.write_text(
@@ -97,6 +100,21 @@ def test_root_redirects_using_realtime_mapping_and_passes_oauth_params(
         test_client.get("/?redirect_to=changed", follow_redirects=False).status_code
         == 307
     )
+
+
+def test_root_redirect_rejects_missing_web_port(settings, make_instance):
+    make_instance("demo01")
+    configured = replace(settings, global_host="https://deck.example.com")
+    configured.global_config_path.write_text(
+        json.dumps({"redirect_to": {"desktop": "demo01"}}), encoding="utf-8"
+    )
+    test_client = TestClient(create_app(configured))
+
+    response = test_client.get("/?redirect_to=desktop", follow_redirects=False)
+
+    assert response.status_code == 400
+    assert "WEB_CLIENT_PORT" in response.json()["detail"]
+    assert "location" not in response.headers
 
 
 def test_root_redirect_does_not_fall_back_when_global_host_is_missing(

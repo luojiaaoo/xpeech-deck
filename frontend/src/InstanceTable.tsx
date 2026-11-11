@@ -6,6 +6,7 @@ import {
   CaretRightOutlined,
   BranchesOutlined,
   CloudDownloadOutlined,
+  ExportOutlined,
   FileTextOutlined,
   PauseOutlined,
   PoweroffOutlined,
@@ -14,6 +15,7 @@ import {
   TableOutlined,
 } from '@ant-design/icons'
 import type { Instance } from './types'
+import { getWebClientUrl } from './webClient'
 
 export type Action = 'up' | 'start' | 'stop' | 'restart' | 'down' | 'ps' | 'logs'
 
@@ -64,6 +66,26 @@ export default function InstanceTable({
       title: '端口',
       key: 'ports',
       render: (_, record) => record.ports.join(', ') || '-',
+    },
+    {
+      title: '超链接',
+      key: 'web_client',
+      width: 160,
+      render: (_, record) => (
+        <Tooltip title={record.web_client_port === null ? '未配置有效的 WEB_CLIENT_PORT' : `Web 端口：${record.web_client_port}`}>
+          <Button
+            type="link"
+            icon={<ExportOutlined />}
+            disabled={record.web_client_port === null}
+            href={record.web_client_port === null ? undefined : getWebClientUrl(record.web_client_port)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`进入 ${record.name} 的 Web 客户端`}
+          >
+            WEB_CLIENT
+          </Button>
+        </Tooltip>
+      ),
     },
     {
       title: '版本',

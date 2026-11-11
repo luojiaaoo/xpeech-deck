@@ -8,8 +8,8 @@ from typing import Literal
 
 class InstanceOut(BaseModel):
     name: str
-    backend_port: int
-    web_client_port: int
+    backend_port: int | None
+    web_client_port: int | None
     ports: list[str]
     path: str
 
@@ -20,7 +20,7 @@ class InstanceListOut(BaseModel):
 
 class PublicInstanceOut(BaseModel):
     name: str
-    web_client_port: int
+    web_client_port: int | None
 
 
 class PublicInstanceListOut(BaseModel):
@@ -127,7 +127,9 @@ class SuccessOut(BaseModel):
 
 class SkillOut(BaseModel):
     name: str
+    is_custom: bool
     description: str
+    filter: str | None = None
     file_count: int
     size_bytes: int
 
@@ -142,12 +144,3 @@ class SkillContentOut(BaseModel):
 
 class SaveSkillContentIn(BaseModel):
     content: str
-
-
-class MigrateSkillIn(BaseModel):
-    target_instances: list[str]
-    overwrite: bool = False
-
-
-class SkillMigrationOut(BaseModel):
-    migrated: list[str]
